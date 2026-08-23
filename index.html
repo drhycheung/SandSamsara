@@ -502,10 +502,9 @@ class ParticleEngine {
     // per pass. Even inflow is what the cellular automaton can accept:
     // pumping many cells into a few narrow columns makes the surface
     // leap up in spikes that immediately collapse, and the pond never
-    // seems to settle. The deepest stretch fills first; donors are drawn
-    // in order so the opposite shore sinks evenly too. A stretch whose
-    // columns are all blocked (a bridge overhead, say) is skipped so it
-    // cannot starve the rest of the pond.
+    // seems to settle. EVERY stretch gets its share each pass — picking
+    // the neediest first starved distant shores when a big needy run on
+    // open ground could never hold what it was given.
     deficit.sort((a, b) => a.x - b.x);
     const runs = [];
     for (const d of deficit) {
@@ -513,11 +512,9 @@ class ParticleEngine {
       if (last && d.x <= last[last.length - 1].x + 1) last.push(d);
       else runs.push([d]);
     }
-    runs.sort((a, b) =>
-      b.reduce((s, c) => s + c.need, 0) - a.reduce((s, c) => s + c.need, 0));
     let si = 0;
+    outer:
     for (const run of runs) {
-      let served = 0;
       for (const D of run) {
         // one cell onto this column, if it has room and headroom
         while (si < surplus.length) {
@@ -532,11 +529,10 @@ class ParticleEngine {
           grid[srcIdx] = P.EMPTY; life[srcIdx] = 0; temp[srcIdx] = 0;
           S.top++; S.need--;
           if (S.need <= 0) si++;
-          served++;
           break;   // one cell per column per pass
         }
+        if (si >= surplus.length) break outer;
       }
-      if (served > 0) break;   // deepest stretch that could take water wins
     }
   }
 
@@ -692,7 +688,25 @@ class ParticleEngine {
         }
       }
     }
-    // settled: nothing to fall toward within reach
+    // Submerged cells transmit pressure sideways — how water crosses
+    // flat pipes and the bottom channel of communicating vessels. Only
+    // cells with a roof of water may drift; the free surface stays put
+    // or ponds shimmer forever as the scan direction alternates.
+    if (y > 0 && this.grid[this.idx(x, y - 1)] === P.WATER) {
+      for (const d of [dir, -dir]) {
+        for (let step = 1; step <= 6; step++) {
+          const nx = x + d * step;
+          if (!this.inBounds(nx,y)) break;
+          const ni = this.idx(nx,y);
+          if (this.grid[ni] !== P.EMPTY) break;
+          if (step === 6 || !this.inBounds(nx+d,y) ||
+              this.grid[this.idx(nx+d,y)] !== P.EMPTY) {
+            this.moveTo(i, ni); return;
+          }
+        }
+      }
+    }
+    // settled: nothing to fall or seep toward within reach
   }
 
   // --- FIRE ---
