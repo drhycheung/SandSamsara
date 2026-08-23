@@ -2232,6 +2232,19 @@ class FireWheel {
     fig.state = STATES.FLEE;
   }
 
+  dissipate(figures) {
+    while (figures.some(fig => fig.captured && fig.capturedBy === this)) {
+      this.releaseSoul(figures);
+    }
+    this.active = false;
+    this.isDragging = false;
+    this.radius = 0;
+    this.targetRadius = 0;
+    this.state = "idle";
+    this.flameParticles = [];
+    this._cleansingTimer = 0;
+  }
+
   combinedCoverage(engine, wheels) {
     const cs = CONFIG.grid.cellSize;
     const screenWidth = engine.w * cs;
@@ -2313,43 +2326,51 @@ class FireWheel {
 
     // Active: endless growth + capture (figures orbit, do NOT die)
     if (this.state === "active") {
-      if (this.touchesRestoration(engine)) {
-        this.targetRadius = Math.max(CONFIG.fireWheel.initialRadius, this.targetRadius - 0.3);
+      const restoring = this.touchesRestoration(engine);
+      if (restoring) {
+        this.radius = Math.max(0, this.radius - 0.3);
+        this.targetRadius = Math.max(0, this.targetRadius - 0.3);
         if (++this._cleansingTimer >= 45) {
           this._cleansingTimer = 0;
           this.releaseSoul(figures);
         }
+        if (this.radius === 0) {
+          this.dissipate(figures);
+          return;
+        }
       } else {
         this._cleansingTimer = 0;
         this.targetRadius = Math.min(this.maxRadius, this.targetRadius + 0.08);
+        this.radius = lerp(this.radius, this.targetRadius, 0.03);
       }
-      this.radius = lerp(this.radius, this.targetRadius, 0.03);
 
-      const detectR = this.radius + 40;
-      const detectR2 = detectR * detectR;
-      for (const fig of figures) {
-        if (fig.dead || fig.liberated || fig.isLiberating || fig.captured) continue;
-        const d2 = dist2(this.x, this.y, fig.x, fig.y);
-        if (d2 < detectR2) {
-          const d = Math.sqrt(d2);
-          const force = 40 / (d + 10);
-          fig.x += (this.x - fig.x) / d * force;
-          fig.y += (this.y - fig.y) / d * force;
-          fig.fearLevel = 1;
-          fig.beingPulled = true;
-          fig.pullX = this.x;
-          fig.pullY = this.y;
-          fig.pullAmount = Math.min(1, 1.2 - d / detectR);
-          // capture: figure orbits at the wheel's outer edge
-          if (d < this.radius * 0.9) {
-            fig.captured = true;
-            fig.capturedBy = this;   // remember WHICH wheel holds this soul
-            fig.captureAngle = Math.atan2(fig.y - this.y, fig.x - this.x);
-            fig.captureOffset = 0.92 + Math.random() * 0.14;
-            fig.captureRadius = this.radius * fig.captureOffset;
-            fig.captureSpeed = 0.015 + Math.random() * 0.02; // same direction as wheel
-            this.absorbedCount++;
-            this.targetRadius = Math.min(this.maxRadius, this.targetRadius + CONFIG.fireWheel.growthPerAbsorb);
+      if (!restoring) {
+        const detectR = this.radius + 40;
+        const detectR2 = detectR * detectR;
+        for (const fig of figures) {
+          if (fig.dead || fig.liberated || fig.isLiberating || fig.captured) continue;
+          const d2 = dist2(this.x, this.y, fig.x, fig.y);
+          if (d2 < detectR2) {
+            const d = Math.sqrt(d2);
+            const force = 40 / (d + 10);
+            fig.x += (this.x - fig.x) / d * force;
+            fig.y += (this.y - fig.y) / d * force;
+            fig.fearLevel = 1;
+            fig.beingPulled = true;
+            fig.pullX = this.x;
+            fig.pullY = this.y;
+            fig.pullAmount = Math.min(1, 1.2 - d / detectR);
+            // capture: figure orbits at the wheel's outer edge
+            if (d < this.radius * 0.9) {
+              fig.captured = true;
+              fig.capturedBy = this;   // remember WHICH wheel holds this soul
+              fig.captureAngle = Math.atan2(fig.y - this.y, fig.x - this.x);
+              fig.captureOffset = 0.92 + Math.random() * 0.14;
+              fig.captureRadius = this.radius * fig.captureOffset;
+              fig.captureSpeed = 0.015 + Math.random() * 0.02; // same direction as wheel
+              this.absorbedCount++;
+              this.targetRadius = Math.min(this.maxRadius, this.targetRadius + CONFIG.fireWheel.growthPerAbsorb);
+            }
           }
         }
       }
