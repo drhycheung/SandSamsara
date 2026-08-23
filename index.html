@@ -1150,6 +1150,21 @@ class StickFigure {
     return { fire, magma };
   }
 
+  // Magma radiates lethal heat through ash and other loose material.
+  // Any molten cell within one grid cell of the figure's body is fatal.
+  probeMagmaHeat(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const top = Math.floor((this.y - this.bodyH/2) / cs) - 1;
+    const bot = Math.floor((this.y + this.bodyH/2 + 1) / cs) + 1;
+    for (let cy = top; cy <= bot; cy++) {
+      for (let cx = gx - 1; cx <= gx + 1; cx++) {
+        if (engine.get(cx, cy) === P.MAGMA) return true;
+      }
+    }
+    return false;
+  }
+
   // Fire wheels are feared universally — every being senses them from afar.
   // Returns true (and caches this._threat) if a wheel is dangerously close.
   detectWheelThreat(wheels) {
@@ -1393,11 +1408,10 @@ class StickFigure {
     this.animTimer++;
     if (this.animTimer >= 30) { this.animTimer = 0; this.animFrame = (this.animFrame + 1) % 2; }
 
-    // Precise body-column hazard probe — runs BEFORE any early return so
-    // dragged or stunned figures cannot be ferried through molten rock.
-    // Magma contact = instant death, always.
+    // Hazard probes run BEFORE any early return so dragged or stunned
+    // figures cannot be ferried through molten rock or its radiating heat.
     const bodyHaz = this.probeBodyHazards(engine);
-    if (bodyHaz.magma) { this.die(engine); return; }
+    if (bodyHaz.magma || this.probeMagmaHeat(engine)) { this.die(engine); return; }
 
     // Mouse drag overrides everything
     if (this.isDragged) {
@@ -1492,8 +1506,8 @@ class StickFigure {
         // outweigh — desire here outranks caution more often than not
         const plantPull = this.oasisTarget ? 0.55 + 0.75 * this.greed : 0;
 
-        if (elemT && fearStrength > plantPull) {
-          // fear wins — shrink away from the hazard
+        if (elemT && (elemT.type === P.MAGMA || fearStrength > plantPull)) {
+          // Magma is never worth braving; otherwise fear must outweigh desire.
           this._threat = elemT;
           this.state = STATES.FLEE;
           this.happy = false;
