@@ -52,7 +52,7 @@ No in-game text or narration is presented. Following the Zen principle of "no es
 |------|------|
 | Chinese title | 沙界轮回 |
 | English title | Sand-Samsara |
-| Repository name | sand-samsara |
+| Repository name | SandSamsara |
 
 ---
 

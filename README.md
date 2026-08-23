@@ -52,7 +52,7 @@
 |------|------|
 | 中文名 | 沙界轮回 |
 | 英文名 | Sand-Samsara |
-| 仓库名 | sand-samsara |
+| 仓库名 | SandSamsara |
 
 ---
 
