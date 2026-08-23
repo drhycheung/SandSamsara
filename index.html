@@ -153,6 +153,11 @@ const CONFIG = {
     turnDelayMax: 120,
     dragLerp: 0.2,
     dragStun: 30,
+    // greed & fear tuning — how hard souls chase greenery, and how
+    // readily rivalry over it boils into blows
+    fightRange: 18,
+    fightChance: 0.06,
+    fightCooldown: 420,
     liberationChance: 0.0001,
     maxLiberationsPerCycle: 2,
     liberationIdleFrames: 600,
@@ -216,7 +221,8 @@ const COLOR_VARIANTS = {
 
 const STATES = {
   IDLE:0, WALK:1, FLEE:2, STRUGGLE:3, BURIED:4,
-  DROWNING:5, BURNING:6, STUNNED:7, ASCENDING:8, DRAGGED:9, CLIMB:10
+  DROWNING:5, BURNING:6, STUNNED:7, ASCENDING:8, DRAGGED:9, CLIMB:10,
+  FIGHT:11
 };
 
 const PERSONAS = { APATHETIC:0, RESTLESS:1, SURVIVOR:2, SEEKER:3 };
@@ -550,6 +556,7 @@ class ParticleEngine {
       visited[i0] = 1;
       let size = 0, sx = 0, sy = 0;
       let minX = w, maxX = 0, minY = h, maxY = 0;
+      const colTop = {};
       while (stack.length) {
         const i = stack.pop();
         const x = i % w, y = (i / w) | 0;
@@ -558,6 +565,9 @@ class ParticleEngine {
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
+        // highest cell of this cluster in each column — lets seekers aim
+        // at real surface instead of the bounding box's empty corners
+        if (colTop[x] === undefined || y < colTop[x]) colTop[x] = y;
         if (x > 0 && !visited[i-1] && grid[i-1] === t) { visited[i-1] = 1; stack.push(i-1); }
         if (x < w-1 && !visited[i+1] && grid[i+1] === t) { visited[i+1] = 1; stack.push(i+1); }
         if (y > 0 && !visited[i-w] && grid[i-w] === t) { visited[i-w] = 1; stack.push(i-w); }
@@ -565,7 +575,7 @@ class ParticleEngine {
       }
       clusters.push({
         x: sx / size, y: sy / size, size,
-        minX, maxX, minY, maxY
+        minX, maxX, minY, maxY, colTop
       });
     }
     return clusters;
@@ -1053,6 +1063,14 @@ class StickFigure {
     this.bodyW = 10;
     this.bodyH = 22;
     this.dead = false;
+    // 投胎 birth-light & quarrel bookkeeping
+    this.birthTimer = 0;
+    this.isReborn = false;
+    this._fightCd = 0;
+    this._rival = null;
+    this._fightTimer = 0;
+    this._fightFlash = 0;
+    this._blocked = 0;
   }
 
   get gridX() { return Math.floor(this.x / CONFIG.grid.cellSize); }
@@ -1182,29 +1200,34 @@ class StickFigure {
   //   size  — logarithmic, so vast groves do not endlessly dominate
   //   distance — strong falloff, so what grows nearby suffices
   //   score = (1 + ln(size+1)/2) ÷ (1 + distance / D),  D ≈ 140px
-  // Distance is measured to the cluster's BOUNDING BOX (nearest point),
-  // not its centroid — a hedge around one's feet is truly near, even if
-  // its centre of mass lies far away. Thus a modest patch at one's side
-  // outweighs a great forest afar, while equal distances are won by the
-  // greater body. Throttled by caller; result cached in this.oasisTarget
-  // as {x, y, type} in cell coords (type: "plant" | "water").
+  // Distance is measured to the nearest LIVING COLUMN TOP — a real
+  // surface cell, not a bounding-box corner that may hang over bare
+  // cliff or thin air. A hedge around one's feet is truly near; a grove
+  // down the cliff face draws its admirers to the edge, where gravity
+  // finishes the descent. Throttled by caller; result cached in
+  // this.oasisTarget as {x, y, type} in cell coords ("plant" | "water").
   findOasis(engine) {
     const cs = CONFIG.grid.cellSize;
     const fallDist = cs * 35;
     let best = null, bestScore = 0.8;  // below this, a distant speck lures no one
     const consider = (clusters, weight, type) => {
       for (const c of clusters) {
-        // nearest point on the bounding box, in pixels
-        const bx0 = c.minX * cs, bx1 = (c.maxX + 1) * cs;
-        const by0 = c.minY * cs, by1 = (c.maxY + 1) * cs;
-        const nx = clamp(this.x, bx0, bx1);
-        const ny = clamp(this.y, by0, by1);
-        const d = Math.sqrt(dist2(this.x, this.y, nx, ny));
+        // Nearest point of the ACTUAL body: the closest column top. A
+        // bounding box lies about L-shaped or cliff-side groves — its
+        // nearest corner can hang over bare stone, and a soul sent
+        // there idles on the edge forever instead of descending.
+        let bd2 = Infinity, tx = c.minX, ty = c.minY;
+        for (const key in c.colTop) {
+          const px2 = (+key) * cs + cs / 2;
+          const py2 = c.colTop[key] * cs;
+          const dd = dist2(this.x, this.y, px2, py2);
+          if (dd < bd2) { bd2 = dd; tx = +key; ty = c.colTop[key]; }
+        }
+        const d = Math.sqrt(bd2);
         const s = weight * (1 + Math.log(c.size + 1) / 2) / (1 + d / fallDist);
         if (s > bestScore) {
           bestScore = s;
-          // walk target: the nearest point ON the body, in cell coords
-          best = { x: Math.floor(nx / cs), y: Math.floor(ny / cs), type };
+          best = { x: tx, y: ty, type };
         }
       }
     };
@@ -1270,12 +1293,26 @@ class StickFigure {
     const cs = CONFIG.grid.cellSize;
     const isWater = this.oasisTarget.type === "water";
     const arriveDist = isWater ? cs * 3 : cs * 2;
+    const footYc = Math.floor((this.y + this.bodyH/2 - 2) / cs);
+    const levelWithTarget = isWater || this.oasisTarget.y <= footYc + 4;
+    // A committed descent overrides everything else until we truly land:
+    // without the latch the walk branch re-aims at the target column
+    // every frame and its occupant just paces the rim forever.
+    if (this._descend && levelWithTarget) this._descend = false;
+    if (this._descend) {
+      if (!this.direction) this.direction = 1;
+      this.state = STATES.WALK;
+      this.vx = this.direction * C.walkSpeed * 0.9;
+      return;
+    }
     const ox = this.oasisTarget.x * cs + cs/2;
     const dx = ox - this.x;
+    // greed is haste: the covetous hurry toward what they desire
+    const zeal = 0.85 + 0.55 * this.greed;
     if (Math.abs(dx) > arriveDist) {
       this.state = STATES.WALK;
       this.direction = dx > 0 ? 1 : -1;
-      const stepX = this.direction * C.walkSpeed * 0.9;
+      const stepX = this.direction * C.walkSpeed * zeal;
       // hazard check on the intended path
       const aheadGX = Math.floor((this.x + stepX * 6) / cs);
       const footY = Math.floor((this.y + this.bodyH/2 - 2) / cs);
@@ -1307,8 +1344,27 @@ class StickFigure {
       } else if (chance(0.06) && this.onGround(engine)) {
         this.vy = -1.8; // occasional hop
       }
+    } else if (!levelWithTarget) {
+      // The greenery sits far below the feet (we stand on a ledge over
+      // the grove's rim) — not arrived. Commit to stepping off the edge;
+      // gravity will finish the journey. The heading we came by is kept.
+      this._descend = true;
+      if (!this.direction) this.direction = 1;
+      this.state = STATES.WALK;
+      this.vx = this.direction * C.walkSpeed * zeal;
     } else {
-      // arrived — rest contentedly among the greenery (or at the water's edge)
+      // arrived among the coveted greenery — and greed breeds rivalry:
+      // another soul eyeing the same patch may be challenged
+      const crowd = this._samsara && this._samsara.figures;
+      if (crowd && !(this._fightCd > 0) &&
+          chance(CONFIG.stickFigures.fightChance)) {
+        const rival = crowd.find(o => o !== this && !o.dead && !o.isLiberating &&
+          o.oasisTarget && o.oasisTarget.type === this.oasisTarget.type &&
+          dist2(o.x, o.y, this.x, this.y) <
+            CONFIG.stickFigures.fightRange * CONFIG.stickFigures.fightRange);
+        if (rival && this.startFightWith(rival)) return;
+      }
+      // rest contentedly among the greenery (or at the water's edge)
       this.state = STATES.IDLE;
       this.vx = 0;
     }
@@ -1317,6 +1373,9 @@ class StickFigure {
   update(engine, wheels, samsara) {
     const C = CONFIG.stickFigures;
     if (this.dead) return;
+    this._samsara = samsara;
+    if (this.birthTimer > 0) this.birthTimer--;
+    if (this._fightCd > 0) this._fightCd--;
     if (this.isLiberating) { this.updateLiberation(engine); return; }
     if (this.captured) {
       // position is controlled by fire wheel; just animate
@@ -1350,6 +1409,14 @@ class StickFigure {
       this.stunTimer--;
       this.state = STATES.STUNNED;
       this.applyGravity(engine);
+      return;
+    }
+
+    // Mid-brawl: the quarrel runs its own course until someone yields,
+    // is parted by distance, or falls. Hazards above still claim them.
+    if (this.state === STATES.FIGHT) {
+      this.updateFight(engine);
+      this.applyMovement(engine);
       return;
     }
 
@@ -1412,15 +1479,17 @@ class StickFigure {
         }
         // greed vs fear trade-off, resolved per individual
         const elemT = this.senseElementThreat(engine);
-        const fearRangePx = Math.round(5 + (1 - this.greed) * 11) * cs;
+        const fearRangePx = Math.round(4 + (1 - this.greed) * 10) * cs;
         let fearStrength = 0;
         if (elemT) {
           const td = Math.sqrt(dist2(this.x, this.y, elemT.x*cs + cs/2, elemT.y*cs + cs/2));
           fearStrength = clamp(1 - td / fearRangePx, 0, 1);
+          fearStrength *= fearStrength * (2 - this.greed); // terror grips the timid hardest
         }
         // a sensed sanctuary (grove or pond) exerts pull even from afar;
-        // greedy beings feel it more
-        const plantPull = this.oasisTarget ? 0.35 + 0.65 * this.greed : 0;
+        // the greedy feel it as a hunger that fear must struggle to
+        // outweigh — desire here outranks caution more often than not
+        const plantPull = this.oasisTarget ? 0.55 + 0.75 * this.greed : 0;
 
         if (elemT && fearStrength > plantPull) {
           // fear wins — shrink away from the hazard
@@ -1564,6 +1633,79 @@ class StickFigure {
     }
   }
 
+  // --- FIGHTS -----------------------------------------------------------
+  // Greed breeds rivalry: when two souls covet the same greenery (or
+  // jostle in the same panic-flight), blows are exchanged. Most quarrels
+  // end with shoves and bruised pride; rarely, one falls — and the wheel
+  // of rebirth turns for them as for all.
+  startFightWith(rival) {
+    const C = CONFIG.stickFigures;
+    if ((this._fightCd > 0) || (rival._fightCd > 0)) return false;
+    if (rival.dead || rival.isLiberating || rival.captured ||
+        rival.state === STATES.FIGHT || rival.state === STATES.STUNNED) return false;
+    this.state = STATES.FIGHT;
+    rival.state = STATES.FIGHT;
+    this._rival = rival;
+    rival._rival = this;
+    const dur = 80 + rand(70);
+    this._fightTimer = dur;
+    rival._fightTimer = dur;
+    this.direction = rival.x >= this.x ? 1 : -1;
+    rival.direction = -this.direction;
+    this.vx = 0; rival.vx = 0;
+    return true;
+  }
+
+  updateFight(engine) {
+    const r = this._rival;
+    if (this._fightFlash > 0) this._fightFlash--;
+    if (!r || r.dead || r.state !== STATES.FIGHT || r._rival !== this ||
+        dist2(this.x, this.y, r.x, r.y) > 44 * 44) {
+      this.endFight();
+      return;
+    }
+    this._fightTimer--;
+    if (this._fightTimer <= 0) { this.endFight(); return; }
+    // face the foe
+    this.direction = r.x >= this.x ? 1 : -1;
+    // exchange blows — lunges, shoves, desperate little leaps
+    if (chance(0.12)) {
+      const lunge = chance(0.5) ? 1 : -1;
+      this.vx = lunge * 1.1;
+      r.vx = -lunge * 0.7;
+      if (chance(0.35)) this.vy = -1.7;
+      this._fightFlash = 5;
+      // a landed blow draws a spark of pain
+      if (chance(0.4) && r.stunTimer <= 0) {
+        r.health -= 6;
+        r._fightFlash = 5;
+        if (r.health <= 0 && !r.dead) {
+          r.die(engine);
+          this.endFight();
+          return;
+        }
+      }
+    } else {
+      this.vx *= 0.7;
+    }
+    // very rarely the quarrel turns lethal outright — 轮回 awaits
+    if (chance(0.0012)) {
+      this.die(engine);
+      return;
+    }
+  }
+
+  endFight() {
+    if (this.state !== STATES.FIGHT) return;
+    this.state = STATES.WALK;
+    this._fightCd = CONFIG.stickFigures.fightCooldown;
+    this._rival = null;
+    // the loser's appetite cools: seek greener ground elsewhere
+    this.oasisTarget = null;
+    this._oasisTimer = 30;
+    this.vx = this.direction * CONFIG.stickFigures.walkSpeed * 0.6;
+  }
+
   applyMovement(engine) {
     const cs = CONFIG.grid.cellSize;
     // Vertical movement
@@ -1576,17 +1718,34 @@ class StickFigure {
     // Horizontal
     if (this.vx !== 0) {
       const nx = this.x + this.vx;
-      if (this.canMoveTo(engine, nx, this.y)) {
-        this.x = nx;
-      } else {
-        // try step up
-        if (this.canMoveTo(engine, nx, this.y - cs)) {
+      let moved = false;
+      // Souls press onward up slopes no timid walker would dare: try the
+      // level path first, then ever taller steps — anything short of a
+      // sheer wall (~80°) can be scaled.
+      for (const lift of [0, cs, cs * 2, cs * 3]) {
+        if (this.canMoveTo(engine, nx, this.y - lift)) {
           this.x = nx;
-          this.y -= cs;
+          this.y -= lift;
+          moved = true;
+          break;
+        }
+      }
+      if (!moved) {
+        // truly walled in — leap at it before surrendering ground
+        if (this.onGround(engine)) {
+          this.vy = -2.8;
+          if (++this._blocked > 24) {
+            this._blocked = 0;
+            this.direction *= -1;
+            this.vx = 0;
+          }
         } else {
           this.direction *= -1;
           this.vx = 0;
+          this._blocked = 0;
         }
+      } else {
+        this._blocked = 0;
       }
     }
 
@@ -1639,6 +1798,9 @@ class StickFigure {
         this.liberated = true;
         this.dead = true;
         this.isLiberating = false;
+        // even transcendence keeps the wheel turning: one soul departs,
+        // another awakens below
+        if (this._samsara) this._samsara.rebirthQueue++;
       }
     }
 
@@ -1667,6 +1829,9 @@ class StickFigure {
         }
       }
     }
+    // 轮回 — the wheel turns at once: a new soul will kindle elsewhere
+    // this very frame. Death here is a change of place, not an end.
+    if (this._samsara) this._samsara.rebirthQueue++;
   }
 
   render(ctx) {
@@ -1693,6 +1858,9 @@ class StickFigure {
       color = "#6AB0F0";
     } else if (this.state === STATES.BURIED) {
       color = "#b0a080";
+    } else if (this.state === STATES.FIGHT) {
+      // blood up: a hot, quarrelsome hue
+      color = this._fightFlash > 0 ? "#FFFFFF" : "#FF9977";
     }
 
     ctx.globalAlpha = alpha;
@@ -1703,6 +1871,28 @@ class StickFigure {
     if (this.isLiberating && this.libStage >= 1) {
       ctx.shadowColor = "rgba(255,245,200,0.7)";
       ctx.shadowBlur = 4 + this.libAura * 2;
+    }
+
+    // === 投胎 birth-light — a newborn soul shimmers briefly: a soft
+    // jade ring contracts around it while pale motes spiral upward.
+    // Noticeable, but far quieter than the gold of ascension. ===
+    if (this.birthTimer > 0 && !this.isLiberating) {
+      const t = this.birthTimer / 60;              // 1 → 0
+      const rr = 4 + (1 - t) * 20;
+      ctx.save();
+      ctx.strokeStyle = `rgba(150,255,215,${(t * 0.65).toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(0, 0, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(210,255,238,${(t * 0.85).toFixed(3)})`;
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + this.birthTimer * 0.14;
+        const mx = Math.cos(a) * rr * 0.55;
+        const my = Math.sin(a) * rr * 0.55 - (1 - t) * 16;
+        ctx.fillRect(mx, my, 1.6, 1.6);
+      }
+      ctx.restore();
     }
 
     const headR = 3;
@@ -2302,9 +2492,12 @@ class SamsaraManager {
     this.totalLiberated = 0;
     this.screenShake = 0;
     this.flashAlpha = 0;
-    // gradual respawn after reset
+    // gradual respawn after world reset
     this.respawnRemaining = 0;
     this.respawnTimer = 0;
+    // 轮回 — every death queues one immediate rebirth elsewhere
+    this.rebirthQueue = 0;
+    this.figures = [];
   }
 
   triggerExplosion(x, y) {
@@ -2318,6 +2511,18 @@ class SamsaraManager {
   }
 
   update(engine, figures, wheels) {
+    this.figures = figures;
+
+    // 轮回 · Rebirth — a death registered last frame kindles a new soul
+    // at once, far from where the old one fell. Population is thus kept
+    // constant: nothing truly ends here, it only changes place and form.
+    while (this.rebirthQueue > 0) {
+      const before = figures.length;
+      this.spawnFigure(engine, figures, { rebirth: true });
+      if (figures.length === before) break; // no hospitable ground found
+      this.rebirthQueue--;
+    }
+
     // Gradual respawn after world reset
     if (this.respawnRemaining > 0 && !this.exploding) {
       this.respawnTimer--;
@@ -2447,7 +2652,7 @@ class SamsaraManager {
     }
   }
 
-  spawnFigure(engine, figures) {
+  spawnFigure(engine, figures, opts) {
     const cs = CONFIG.grid.cellSize;
     // find a spot with ground below and empty above
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -2467,7 +2672,13 @@ class SamsaraManager {
           cum += w[p];
           if (r < cum) { persona = p; break; }
         }
-        figures.push(new StickFigure(gx * cs + cs/2, gy * cs + cs/2, persona));
+        const fig = new StickFigure(gx * cs + cs/2, gy * cs + cs/2, persona);
+        if (opts && opts.rebirth) {
+          // 投胎 — the newborn carries a faint birth-light for a while
+          fig.birthTimer = 60;
+          fig.isReborn = true;
+        }
+        figures.push(fig);
         return;
       }
     }
