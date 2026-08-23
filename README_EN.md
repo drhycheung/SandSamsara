@@ -20,31 +20,19 @@ Sand-Samsara is a modern artistic reimagining of the 2005 classic particle sandb
 
 ## Worldview & Gameplay
 
-This is a falling-particle sandbox game. Playing as an observer, you scatter sand, fire, water, magma and other substances across the world, watching the fortunes of countless stick-figure beings.
+This is a falling-particle sandbox game. You are at once an observer and an external condition within this world: with one hand you scatter sand, fire, water, magma and other substances, shaping circumstances; with the other you watch the fortunes of countless stick-figure beings unfold.
 
-This is Sand-Samsara, a formless realm constructed of particles and dust.
+This is Sand-Samsara, a formless realm constructed of particles and dust. All beings awaken here with no memory of past lives. They do not understand karma, nor the cycle of rebirth. Some drift numbly, some wander restlessly, some struggle desperately to escape suffering, and others obsessively seek the world's edge, longing for permanence. All their running and striving arises from ignorance — they attempt to find peace by changing external circumstances, yet never escape the cycle itself.
 
-All beings awaken here with no memory of past lives. They do not understand karma, nor the cycle of rebirth. Some drift numbly, some wander restlessly, some struggle desperately to escape suffering, and others obsessively seek the world's edge, longing for permanence. All their running and striving arise from ignorance. They attempt to find peace by changing external circumstances, yet never escape the cycle itself.
+Yet merely fleeing suffering and struggling to stay alive brings no true liberation. This world holds the Wheel of Karmic Fire, the embodiment of collective unwholesome karma woven together by all beings. The wheel manifests periodically, guided by the player's hand or roaming freely on its own. Any being drawn into it becomes entangled in shared karmic force: the more lives consumed, the heavier the collective karma grows, and the larger the wheel becomes.
 
-Yet merely fleeing suffering and struggling to stay alive brings no true liberation.
+As the wheel expands, beings are gradually pressed toward the world's edges. Flames spread along the boundaries, trapping all who remain; no escape is left. When collective karma reaches its critical peak, the world collapses naturally from its own ripened causes. Fire engulfs the realm, particles scatter, landscapes burn away, and one entire cycle of existence comes to an end.
 
-This world holds the Wheel of Karmic Fire — the embodiment of collective unwholesome karma woven together by all beings. Periodically the wheel manifests into the world, guided by the player's hand or roaming freely on its own. Any being drawn into the wheel becomes entangled in shared karmic force. The more lives consumed, the heavier the collective karma grows, and the larger the wheel becomes.
+Destruction is not punishment but the inevitable fruit of conditioned causation. After stillness settles, new lives awaken once more with all memories erased, and samsara turns again.
 
-As the wheel expands, beings are gradually pressed toward the world's edges. Flames spread along the boundaries, trapping all who remain. No escape is left. When collective karma reaches its critical peak, the world collapses naturally from its own ripened causes.
+Within this endless cycle, almost all beings drift with karma, struggle in vain, and perish with the world's dissolution. Only a rare few let go of fear, survival craving, restlessness, and the craving to chase outward. Calm and unshaken, neither fleeing nor grasping nor seeking, they awaken inwardly, and ascension is triggered — a body of golden radiance rises upward, leaving this world of sand forever, breaking free from this cycle, never to return. Liberation is exceedingly rare; in most cycles, not even a single liberated one will appear.
 
-Fire engulfs the realm, particles scatter, landscapes burn away, and one entire cycle of existence comes to an end.
-
-Destruction is not punishment. It is the inevitable fruit of conditioned causation. When collective karma matures, the world dissolves. After stillness settles, new lives awaken once more with all memories erased, and samsara turns again.
-
-Within this endless cycle, almost all beings drift with karma, struggle in vain, and perish with the world's dissolution.
-
-Only a rare few let go of fear, survival craving, restlessness, and the craving to chase outward. Calm and unshaken, they awaken inwardly, and ascension is triggered — golden forms appear, surrounded by points of light, rising upward as bodies of golden radiance, leaving this world of sand forever, breaking free from this cycle, never to return.
-
-Liberation is exceedingly rare; in most cycles, not even a single liberated one will appear.
-
-**You may intervene in the world, sowing circumstances of every kind, becoming one link among countless causes — yet you cannot control the final outcome.**
-
-Every ending arises from the convergence of innumerable conditions. Each being carries its own karmic inclination; the player is merely one external condition among many — you may create peril or create an environment of peace, yet you cannot command karma, cannot grant liberation on another's behalf, and cannot appoint who attains ascension. Awakening can only arise from the transformation of a being's own mind; every destiny unfolds as conditions converge.
+**You may intervene in the world, sowing circumstances of every kind, becoming one link among countless causes — yet you cannot control the final outcome.** Each being carries its own karmic inclination; the player is merely one external condition among many. You may create peril or create an environment of peace, yet you cannot command karma, nor grant liberation on another's behalf. Awakening can only arise from the transformation of a being's own mind; every destiny unfolds as conditions converge.
 
 No in-game text or narration is presented. Following the Zen principle of "no establishment of words", all truth is perceived through observation and intuition alone.
 
@@ -68,6 +56,7 @@ No in-game text or narration is presented. Following the Zen principle of "no es
 | Left-click and hold a stick figure | Drag that being; it is briefly stunned after release |
 | Left-click and hold the Wheel of Karmic Fire | Steer the wheel; on release it resumes wandering on its own |
 | Right-click (hold and drag) | Cut plants (they turn to ash) |
+| Touch devices | A single finger acts as the left button: draw elements, drag beings or steer the wheel; the canvas and controls adapt to phones/tablets |
 | Toolbar at the top | Switch elements, adjust brush size, clear the world, summon the wheel manually |
 
 ---

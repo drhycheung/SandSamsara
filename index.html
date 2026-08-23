@@ -13,6 +13,9 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     color: #ccc;
     user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior: none;
+    touch-action: manipulation;
   }
   #gameWrap {
     position: relative;
@@ -25,6 +28,7 @@
     image-rendering: crisp-edges;
     cursor: crosshair;
     box-shadow: 0 0 60px rgba(0,0,0,0.8);
+    touch-action: none; /* let JS own all touch gestures on the canvas */
   }
   #uiOverlay {
     position: absolute;
@@ -98,6 +102,26 @@
     line-height: 1.5;
   }
   #hud span { color: #C9B896; }
+
+  /* touch devices: bigger tap targets for toolbar controls */
+  @media (pointer: coarse) {
+    .btn {
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+    .btn-label { font-size: 10px; }
+    .slider-group { padding: 8px 12px; }
+    .slider-group input[type=range] {
+      width: 100px; height: 22px;
+    }
+    .slider-group input[type=range]::-webkit-slider-thumb {
+      width: 24px; height: 24px;
+    }
+    .slider-group input[type=range]::-moz-range-thumb {
+      width: 24px; height: 24px;
+    }
+    .toolbar { gap: 6px; }
+  }
 </style>
 </head>
 <body>
@@ -217,6 +241,10 @@ class ParticleEngine {
     this.frame = 0;
     this.scanDir = 1; // 1 = L->R, -1 = R->L
     this._imgData = null; // cached in render()
+    // plant registry: rebuilt periodically so beings can sense greenery
+    // across the whole map without per-figure grid scans
+    this.plantList = [];        // [{x, y}] cell coords of every PLANT cell
+    this._plantScanCounter = 0;
   }
 
   idx(x, y) { return y * this.w + x; }
@@ -297,6 +325,13 @@ class ParticleEngine {
     this.updated.fill(0);
     this.scanDir = this.frame % 2 === 0 ? 1 : -1;
 
+    // periodic full-grid plant rescan (cheap: one pass every 30 frames,
+    // shared by all figures; self-heals after any direct grid writes)
+    if (--this._plantScanCounter <= 0) {
+      this._plantScanCounter = 30;
+      this.rebuildPlants();
+    }
+
     for (let y = this.h - 1; y >= 0; y--) {
       if (this.scanDir === 1) {
         for (let x = 0; x < this.w; x++) this.updateCell(x, y);
@@ -304,6 +339,17 @@ class ParticleEngine {
         for (let x = this.w - 1; x >= 0; x--) this.updateCell(x, y);
       }
     }
+  }
+
+  rebuildPlants() {
+    const list = [];
+    const grid = this.grid;
+    for (let i = 0; i < this.size; i++) {
+      if (grid[i] === P.PLANT) {
+        list.push({ x: i % this.w, y: (i / this.w) | 0 });
+      }
+    }
+    this.plantList = list;
   }
 
   updateCell(x, y) {
@@ -747,6 +793,7 @@ class StickFigure {
     this.pullX = 0; this.pullY = 0;
     this.pullAmount = 0;
     this.captured = false;
+    this.capturedBy = null;   // reference to the wheel holding this soul
     this.captureAngle = 0;
     this.captureRadius = 0;
     this.captureSpeed = 0.03;
@@ -758,6 +805,15 @@ class StickFigure {
     this.happy = false;
     this.oasisTarget = null;
     this._oasisTimer = 0;
+    // temperament: 0 = fearful/conservative → 1 = greedy/adventurous.
+    // Governs the greed-vs-fear trade-off when approaching plants
+    // and how far away hazards are sensed. Persona adds a slight bias,
+    // but individuals still vary widely within each persona.
+    let g = randRange(0.2, 0.8);
+    if (persona === PERSONAS.SURVIVOR) g -= 0.15;                       // survivors are wary
+    else if (persona === PERSONAS.RESTLESS) g += 0.1;                   // restless wanderers are curious
+    else if (persona === PERSONAS.SEEKER) g += 0.05;
+    this.greed = clamp(g, 0.05, 0.95);
     // body dimensions in pixels
     this.bodyW = 10;
     this.bodyH = 22;
@@ -821,12 +877,34 @@ class StickFigure {
     return true;
   }
 
-  // Scan wide area for fire/magma/wheel threats; returns nearest threat or null
-  detectThreat(engine, wheels) {
+  // Fire wheels are feared universally — every being senses them from afar.
+  // Returns true (and caches this._threat) if a wheel is dangerously close.
+  detectWheelThreat(wheels) {
+    for (const wheel of wheels) {
+      if (!wheel.active) continue;
+      const wd = Math.sqrt(dist2(this.x, this.y, wheel.x, wheel.y));
+      if (wd < wheel.radius + 220) {
+        const cs = CONFIG.grid.cellSize;
+        this._threat = { x: Math.floor(wheel.x / cs), y: Math.floor(wheel.y / cs), type: -1 };
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Sense elemental hazards (fire / magma / water).
+  // Cautious beings (low greed) sense danger from farther away;
+  // adventurous ones only notice it when very close.
+  // Throttled to every 4 frames; result cached in this._elemThreat.
+  senseElementThreat(engine) {
+    if (this._elemTimer === undefined) this._elemTimer = rand(4);
+    if (--this._elemTimer > 0) return this._elemThreat;
+    this._elemTimer = 4;
+
     const cs = CONFIG.grid.cellSize;
     const gx = Math.floor(this.x / cs);
     const gy = Math.floor(this.y / cs);
-    const range = 10; // cells — can see danger from far away
+    const range = Math.round(5 + (1 - this.greed) * 11); // 5..16 cells
     let nearest = null;
     let nearestD = Infinity;
     for (let dy = -range; dy <= range; dy++) {
@@ -834,44 +912,32 @@ class StickFigure {
         const cx = gx+dx, cy = gy+dy;
         if (!engine.inBounds(cx, cy)) continue;
         const t = engine.get(cx, cy);
-        if (t === P.FIRE || t === P.MAGMA) {
-          const d = dx*dx + dy*dy;
+        if (t === P.FIRE || t === P.MAGMA || t === P.WATER) {
+          // weight: fire/magma scarier than water; distance matters
+          let d = dx*dx + dy*dy;
+          if (t === P.WATER) d *= 0.7;   // water feels less immediately lethal
           if (d < nearestD) { nearestD = d; nearest = { x: cx, y: cy, type: t }; }
         }
       }
     }
-    // fire wheels are major threats — flee from well beyond their edge
-    for (const wheel of wheels) {
-      if (!wheel.active) continue;
-      const wd = Math.sqrt(dist2(this.x, this.y, wheel.x, wheel.y));
-      if (wd < wheel.radius + 220) {
-        const wx = Math.floor(wheel.x / cs);
-        const wy = Math.floor(wheel.y / cs);
-        const wd2 = (wx-gx)*(wx-gx) + (wy-gy)*(wy-gy);
-        if (wd2 < nearestD) { nearest = { x: wx, y: wy, type: -1 }; nearestD = wd2; }
-      }
-    }
-    this._threat = nearest;
-    return nearest !== null;
+    this._elemThreat = nearest;
+    return nearest;
   }
 
-  // Scan for nearby plants (oasis); returns nearest plant cell or null
-  detectOasis(engine) {
+  // Scan for plants via the engine's cached plant list (whole-map sensing:
+  // even a distant plant is felt). Throttled by caller. Nearest plant cell
+  // is cached in this.oasisTarget.
+  findOasis(engine) {
+    const plants = engine.plantList;
+    if (!plants || plants.length === 0) { this.oasisTarget = null; return false; }
     const cs = CONFIG.grid.cellSize;
-    const gx = Math.floor(this.x / cs);
-    const gy = Math.floor(this.y / cs);
-    const range = 18; // cells — can see oasis from fairly far
     let nearest = null;
     let nearestD = Infinity;
-    for (let dy = -range; dy <= range; dy++) {
-      for (let dx = -range; dx <= range; dx++) {
-        const cx = gx+dx, cy = gy+dy;
-        if (!engine.inBounds(cx, cy)) continue;
-        if (engine.get(cx, cy) === P.PLANT) {
-          const d = dx*dx + dy*dy;
-          if (d < nearestD) { nearestD = d; nearest = { x: cx, y: cy }; }
-        }
-      }
+    for (let k = 0; k < plants.length; k++) {
+      const p = plants[k];
+      const dx = p.x - this.x, dy = p.y - this.y;
+      const d = dx*dx + dy*dy;
+      if (d < nearestD) { nearestD = d; nearest = p; }
     }
     this.oasisTarget = nearest;
     return nearest !== null;
@@ -922,6 +988,46 @@ class StickFigure {
       this.vx = this.direction * C.fleeSpeed;
     }
     this.state = STATES.FLEE;
+  }
+
+  // Walk toward the sensed plant. Greedy/adventurous beings will cross
+  // water or fire to reach it; cautious ones halt at the edge of danger
+  // and wait anxiously — behaviour varies with each being's temperament.
+  approachOasis(engine) {
+    const C = CONFIG.stickFigures;
+    const cs = CONFIG.grid.cellSize;
+    const ox = this.oasisTarget.x * cs + cs/2;
+    const dx = ox - this.x;
+    if (Math.abs(dx) > cs * 2) {
+      this.state = STATES.WALK;
+      this.direction = dx > 0 ? 1 : -1;
+      const stepX = this.direction * C.walkSpeed * 0.9;
+      // hazard check on the intended path
+      const aheadGX = Math.floor((this.x + stepX * 6) / cs);
+      const footY = Math.floor((this.y + this.bodyH/2 - 2) / cs);
+      let hazardAhead = false;
+      for (let probe = -1; probe <= 2; probe++) {
+        const t = engine.get(aheadGX + this.direction * probe, footY);
+        if (t === P.FIRE || t === P.MAGMA || t === P.WATER) { hazardAhead = true; break; }
+      }
+      if (hazardAhead && this.greed < 0.7) {
+        // too fearful to cross — hesitate at the shore
+        this.state = STATES.IDLE;
+        this.vx *= 0.5;
+        return;
+      }
+      // greedy enough: walk on (and jump obstacles/pits like before)
+      this.vx = stepX;
+      if (!this.canMoveTo(engine, this.x + this.vx, this.y) && this.onGround(engine)) {
+        this.vy = -2.8;
+      } else if (chance(0.06) && this.onGround(engine)) {
+        this.vy = -1.8; // occasional hop
+      }
+    } else {
+      // arrived — rest contentedly among the greenery
+      this.state = STATES.IDLE;
+      this.vx = 0;
+    }
   }
 
   update(engine, wheels, samsara) {
@@ -1000,43 +1106,45 @@ class StickFigure {
     }
     // Normal AI
     else if (this.state !== STATES.BURNING) {
-      // instinctive threat detection: flee from nearby fire/magma/wheel
-      if (this.detectThreat(engine, wheels)) {
+      const cs = CONFIG.grid.cellSize;
+      // Fire wheels are feared universally — no temperament overrides this.
+      if (this.detectWheelThreat(wheels)) {
         this.state = STATES.FLEE;
         this.happy = false;
         this.fleeFromThreat(engine);
       } else {
-        // oasis: walk toward plants (scan every 6 frames to save performance)
+        // Whole-map plant sensing (throttled): every being feels where
+        // greenery is, however far away.
         this._oasisTimer--;
         if (this._oasisTimer <= 0) {
-          this._oasisTimer = 6;
-          this.detectOasis(engine);
+          this._oasisTimer = 8;
+          this.findOasis(engine);
         }
-        const nearOasis = this.oasisTarget !== null;
-        const nearWaterHappy = this.checkWaterMood(engine, env);
-        this.happy = nearOasis || nearWaterHappy;
-        if (nearOasis && this.oasisTarget) {
-          const cs = CONFIG.grid.cellSize;
-          const ox = this.oasisTarget.x * cs + cs/2;
-          const dx = ox - this.x;
-          // only walk if not already very close
-          if (Math.abs(dx) > cs * 2) {
-            this.state = STATES.WALK;
-            this.direction = dx > 0 ? 1 : -1;
-            this.vx = this.direction * C.walkSpeed * 0.9;
-            // jump over obstacles / into pits to reach oasis
-            if (!this.canMoveTo(engine, this.x + this.vx, this.y) && this.onGround(engine)) {
-              this.vy = -2.8;
-            } else if (chance(0.06) && this.onGround(engine)) {
-              this.vy = -1.8; // occasional hop
-            }
-          } else {
-            // arrived at oasis — idle happily
-            this.state = STATES.IDLE;
-            this.vx = 0;
-          }
+        // greed vs fear trade-off, resolved per individual
+        const elemT = this.senseElementThreat(engine);
+        const fearRangePx = Math.round(5 + (1 - this.greed) * 11) * cs;
+        let fearStrength = 0;
+        if (elemT) {
+          const td = Math.sqrt(dist2(this.x, this.y, elemT.x*cs + cs/2, elemT.y*cs + cs/2));
+          fearStrength = clamp(1 - td / fearRangePx, 0, 1);
+          if (elemT.type === P.WATER) fearStrength *= 0.8; // water daunts less than flame
+        }
+        // a sensed plant exerts pull even from afar; greedy beings feel it more
+        const plantPull = this.oasisTarget ? 0.35 + 0.65 * this.greed : 0;
+
+        if (elemT && fearStrength > plantPull) {
+          // fear wins — shrink away from the hazard
+          this._threat = elemT;
+          this.state = STATES.FLEE;
+          this.happy = false;
+          this.fleeFromThreat(engine);
+        } else if (this.oasisTarget) {
+          // greed (or simple curiosity) draws them toward the greenery
+          this.approachOasis(engine);
+          this.happy = true;
         } else {
           this.updateAI(engine, env, wheels);
+          this.happy = this.checkWaterMood(engine, env);
         }
       }
     }
@@ -1283,6 +1391,8 @@ class StickFigure {
 
   die(engine) {
     this.dead = true;
+    this.captured = false;
+    this.capturedBy = null;
     // convert to ash at position
     const cs = CONFIG.grid.cellSize;
     const gx = this.gridX, gy = this.gridY;
@@ -1328,8 +1438,8 @@ class StickFigure {
     ctx.lineWidth = this.isLiberating && this.libStage >= 1 ? 2 : 1.5;
     ctx.lineCap = "round";
     if (this.isLiberating && this.libStage >= 1) {
-      ctx.shadowColor = "rgba(255,245,200,0.9)";
-      ctx.shadowBlur = 8 + this.libAura * 4;
+      ctx.shadowColor = "rgba(255,245,200,0.7)";
+      ctx.shadowBlur = 4 + this.libAura * 2;
     }
 
     const headR = 3;
@@ -1337,60 +1447,34 @@ class StickFigure {
     const torsoBot = this.bodyH/2 - 6;
     const hipY = torsoBot;
 
-    // === Liberation aura — peaceful white-gold, NOT fiery ===
+    // === Liberation marks — quiet, minimal: white circle(s) around an
+    // enlarged meditating figure. No blazing aura, no beam, no halo cloud. ===
     if (this.isLiberating) {
-      const auraR = 10 + this.libAura * 7;
-      // soft white-gold outer glow (no orange)
-      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, auraR * 2.2);
-      grad.addColorStop(0, `rgba(255,250,220,${0.5 * this.libAura})`);
-      grad.addColorStop(0.5, `rgba(255,240,180,${0.2 * this.libAura})`);
-      grad.addColorStop(1, "rgba(220,230,255,0)");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(0, 0, auraR * 2.2, 0, Math.PI*2);
-      ctx.fill();
+      // the being grows as it transcends
+      const grow = 1 + Math.min(0.6, this.libAura * 0.3 + (this.libStage >= 2 ? 0.15 : 0));
+      ctx.scale(grow, grow);
 
-      // vertical light beam (ascension column)
-      if (this.libStage >= 1) {
-        const beamW = 6 + this.libAura * 3;
-        const beamGrad = ctx.createLinearGradient(0, -auraR*3, 0, auraR);
-        beamGrad.addColorStop(0, "rgba(255,255,240,0)");
-        beamGrad.addColorStop(0.5, `rgba(255,250,210,${0.3 * this.libAura})`);
-        beamGrad.addColorStop(1, `rgba(255,245,190,${0.15 * this.libAura})`);
-        ctx.fillStyle = beamGrad;
-        ctx.beginPath();
-        ctx.moveTo(-beamW, -auraR * 3);
-        ctx.lineTo(beamW, -auraR * 3);
-        ctx.lineTo(beamW * 1.5, auraR);
-        ctx.lineTo(-beamW * 1.5, auraR);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      // halo ring behind head (soft white-gold)
-      ctx.strokeStyle = `rgba(255,245,200,${0.8 * this.libAura})`;
-      ctx.lineWidth = 1.5;
+      // thin white circle around the whole figure
+      const ringR = this.bodyH * 0.55 + this.libAura * 3;
+      ctx.strokeStyle = `rgba(255,255,255,${0.75 * Math.min(1, this.libAura)})`;
+      ctx.lineWidth = 1.5 / grow;
       ctx.beginPath();
-      ctx.arc(0, -this.bodyH/2 + headR, headR + 3 + this.libAura * 2.5, 0, Math.PI*2);
+      ctx.arc(0, -1, ringR, 0, Math.PI*2);
       ctx.stroke();
-      ctx.fillStyle = `rgba(255,250,220,${0.2 * this.libAura})`;
-      ctx.beginPath();
-      ctx.arc(0, -this.bodyH/2 + headR, headR + 2 + this.libAura * 2, 0, Math.PI*2);
-      ctx.fill();
 
-      // gentle floating sparkles (not rotating rays)
-      if (this.libStage >= 1) {
-        for (let s = 0; s < 6; s++) {
-          const ang = (s / 6) * Math.PI * 2 + this.libTimer * 0.008;
-          const dist = auraR * (0.6 + 0.4 * Math.sin(this.libTimer * 0.03 + s));
-          const sx = Math.cos(ang) * dist;
-          const sy = Math.sin(ang) * dist - this.libTimer * 0.15;
-          ctx.fillStyle = `rgba(255,250,210,${0.5 * this.libAura})`;
-          ctx.beginPath();
-          ctx.arc(sx, sy, 1.2, 0, Math.PI*2);
-          ctx.fill();
-        }
+      // second, fainter concentric ring at full ascension
+      if (this.libStage >= 2) {
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = prevAlpha * 0.45;
+        ctx.beginPath();
+        ctx.arc(0, -1, ringR * 1.22, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.globalAlpha = prevAlpha;
       }
+
+      // modest glow on the strokes only
+      ctx.shadowColor = "rgba(255,250,220,0.8)";
+      ctx.shadowBlur = 5;
     }
 
     // Struggle: body jitter when in danger
@@ -1686,6 +1770,7 @@ class FireWheel {
           // capture: figure orbits at the wheel's outer edge
           if (d < this.radius * 0.9) {
             fig.captured = true;
+            fig.capturedBy = this;   // remember WHICH wheel holds this soul
             fig.captureAngle = Math.atan2(fig.y - this.y, fig.x - this.x);
             fig.captureOffset = 0.92 + Math.random() * 0.14;
             fig.captureRadius = this.radius * fig.captureOffset;
@@ -1697,9 +1782,17 @@ class FireWheel {
       }
     }
 
-    // Rotate all captured figures around the wheel (stay at outer edge)
+    // Rotate captured figures around THEIR OWN wheel (stay at outer edge)
     for (const fig of figures) {
-      if (fig.captured) {
+      if (fig.captured && fig.capturedBy === this) {
+        // safety: if the holding wheel is gone/spent, release the soul
+        if (!this.active || this.radius < 3) {
+          fig.captured = false;
+          fig.capturedBy = null;
+          fig.beingPulled = false;
+          fig.pullAmount = 0;
+          continue;
+        }
         fig.captureAngle += fig.captureSpeed;
         fig.captureRadius = this.radius * (fig.captureOffset || 0.95);
         fig.x = this.x + Math.cos(fig.captureAngle) * fig.captureRadius;
@@ -1976,7 +2069,7 @@ class SamsaraManager {
         this.screenShake = 35;
         // captured figures perish
         for (const fig of figures) {
-          if (fig.captured) { fig.captured = false; fig.die(engine); }
+          if (fig.captured) { fig.captured = false; fig.capturedBy = null; fig.die(engine); }
         }
         // massive initial blast
         const cs = CONFIG.grid.cellSize;
@@ -2149,6 +2242,32 @@ class InputHandler {
     canvas.addEventListener("mouseup", (e) => this.onUp(e));
     canvas.addEventListener("mouseleave", () => { this.mouseDown = false; this.rightDown = false; this.onUp({}); });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // touch support: single finger paints/drags like a left click
+    const touchOpts = { passive: false };
+    const firstTouch = (e) => e.changedTouches[0];
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      this.onDown(this.touchPos(firstTouch(e)));
+    }, touchOpts);
+    canvas.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      this.onMove(this.touchPos(firstTouch(e)));
+    }, touchOpts);
+    canvas.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      this.mouseDown = false;
+      this.onUp({});
+    }, touchOpts);
+    canvas.addEventListener("touchcancel", () => {
+      this.mouseDown = false;
+      this.onUp({});
+    }, touchOpts);
+  }
+
+  // adapt a Touch to the shape of a MouseEvent for onDown/onMove
+  touchPos(touch) {
+    return { clientX: touch.clientX, clientY: touch.clientY, button: 0 };
   }
 
   getCanvasPos(e) {
@@ -2440,6 +2559,17 @@ class Game {
   constructor() {
     this.canvas = document.getElementById("gameCanvas");
     this.ctx = this.canvas.getContext("2d");
+
+    // adaptive world size: match the device screen (phones get a smaller
+    // sandbox, desktops the full one) while keeping the same cell size
+    const cs = CONFIG.grid.cellSize;
+    const vw = Math.max(window.innerWidth, 320);
+    const vh = Math.max(window.innerHeight, 240);
+    CONFIG.grid.width = clamp(Math.round(vw / cs), 180, 560);
+    CONFIG.grid.height = clamp(Math.round(vh / cs), 120, 340);
+    this.canvas.width = CONFIG.grid.width * cs;
+    this.canvas.height = CONFIG.grid.height * cs;
+
     this.offCanvas = document.createElement("canvas");
     this.offCanvas.width = CONFIG.grid.width;
     this.offCanvas.height = CONFIG.grid.height;
@@ -2562,9 +2692,15 @@ class Game {
 
   loop(timestamp) {
     if (!this.lastTime) this.lastTime = timestamp;
-    const dt = timestamp - this.lastTime;
+    let dt = timestamp - this.lastTime;
     this.lastTime = timestamp;
+    // Guard against speed-up bugs: background tab / long frame spikes
+    // would dump huge dt into the accumulator, making every later frame
+    // run the max 5 catch-up steps (game visibly races). Clamp instead.
+    if (dt < 0) dt = 0;
+    if (dt > 100) dt = 100;
     this.accumulator += dt;
+    if (this.accumulator > 200) this.accumulator = this.FIXED_DT;
 
     let steps = 0;
     while (this.accumulator >= this.FIXED_DT && steps < 5) {
@@ -2586,7 +2722,7 @@ class Game {
 // 10. INIT
 // ============================================================
 window.addEventListener("load", () => {
-  const game = new Game();
+  const game = window.game = new Game();
   game.start();
 });
 </script>
