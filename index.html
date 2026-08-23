@@ -346,6 +346,22 @@ class ParticleEngine {
         for (let x = this.w - 1; x >= 0; x--) this.updateCell(x, y);
       }
     }
+
+    // ambient cooling: embers fade, so ground scorched by an old fire
+    // no longer instantly ignites freshly painted oil or gunpowder
+    // (fire and magma manage their own heat)
+    if (this.frame % 2 === 0) {
+      const grid = this.grid, temp = this.temp;
+      for (let i = 0; i < this.size; i++) {
+        const t = grid[i];
+        if (temp[i] !== 0 && t !== P.FIRE && t !== P.MAGMA) {
+          temp[i] = temp[i] > 2 ? temp[i] - 2 : 0;
+        }
+      }
+    }
+
+    // communicating vessels: joined waters settle to one common level
+    if (this.frame % 16 === 3) this.levelWater();
   }
 
   rebuildPlants() {
@@ -364,6 +380,111 @@ class ParticleEngine {
     this._cVisited.fill(0);
     this.plantClusters = this.buildClusters(P.PLANT);
     this.waterClusters = this.buildClusters(P.WATER);
+  }
+
+  // --- connected-vessel levelling -------------------------------------
+  // Air presses alike on every free surface, so waters joined beneath
+  // the horizon must share one level. Each pass flood-fills every pond,
+  // solves the common surface with a water-filling algorithm, then
+  // moves a small quota of cells from higher surfaces to lower ones —
+  // gentle enough to read as flow, not teleportation. Streams still
+  // falling (waterfalls) and stray droplets are left to the normal CA.
+  levelWater() {
+    const grid = this.grid, w = this.w, h = this.h;
+    if (!this._cVisited || this._cVisited.length !== this.size) {
+      this._cVisited = new Uint8Array(this.size);
+    }
+    const visited = this._cVisited;
+    visited.fill(0);
+    const stack = [];
+    for (let i0 = 0; i0 < this.size; i0++) {
+      if (visited[i0] || grid[i0] !== P.WATER) continue;
+      // flood one body; record per-column extent and support
+      stack.length = 0;
+      stack.push(i0);
+      visited[i0] = 1;
+      const cols = new Map();          // x -> {top, bottom, count}
+      let cells = 0, supported = 0;
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % w, y = (i / w) | 0;
+        cells++;
+        let c = cols.get(x);
+        if (!c) { cols.set(x, { top: y, bottom: y, count: 1 }); }
+        else {
+          c.count++;
+          if (y < c.top) c.top = y;
+          if (y > c.bottom) c.bottom = y;
+        }
+        if (y + 1 >= h || grid[i + w] !== P.EMPTY) supported++;
+        if (x > 0 && !visited[i-1] && grid[i-1] === P.WATER) { visited[i-1] = 1; stack.push(i-1); }
+        if (x < w-1 && !visited[i+1] && grid[i+1] === P.WATER) { visited[i+1] = 1; stack.push(i+1); }
+        if (y > 0 && !visited[i-w] && grid[i-w] === P.WATER) { visited[i-w] = 1; stack.push(i-w); }
+        if (y < h-1 && !visited[i+w] && grid[i+w] === P.WATER) { visited[i+w] = 1; stack.push(i+w); }
+      }
+      if (cells < 8) continue;                    // droplets: CA suffices
+      if (supported < cells * 0.9) continue;      // mid-air: not a pond yet
+      this.equalizeColumns(cols, cells);
+    }
+  }
+
+  // Solve the shared surface level L for one body, then shift at most
+  // MAX_MOVES cells per pass from surplus columns to deficit columns.
+  equalizeColumns(cols, totalCells) {
+    const grid = this.grid, life = this.life, temp = this.temp;
+    const w = this.w, h = this.h;
+    const arr = [];
+    for (const [x, c] of cols) arr.push({ x, top: c.top, bottom: c.bottom, count: c.count });
+    arr.sort((a, b) => a.bottom - b.bottom);      // by floor height
+    const n = arr.length;
+
+    // water-filling: raise L group by group until it holds all cells
+    let sumFloor = 0, k = 0, L = arr[0].bottom + 1;
+    while (k < n) {
+      while (k < n && arr[k].bottom + 1 <= L) { sumFloor += arr[k].bottom + 1; k++; }
+      const cap = L * k - sumFloor;
+      if (cap >= totalCells) break;
+      const needL = Math.ceil((totalCells + sumFloor) / Math.max(1, k));
+      if (k < n) L = Math.min(arr[k].bottom + 1, Math.max(L + 1, needL));
+      else { L = needL; break; }
+    }
+
+    // classify columns against the target
+    const surplus = [], deficit = [];
+    for (const c of arr) {
+      const F = c.bottom + 1;
+      const targetH = F <= L ? L - F : 0;
+      const delta = targetH - c.count;
+      if (delta <= -2) surplus.push({ x: c.x, top: c.top, need: -delta });
+      else if (delta >= 2) deficit.push({ x: c.x, top: c.top, bottom: c.bottom, need: delta });
+    }
+    if (!surplus.length || !deficit.length) return;
+
+    // transfer quota — place first, then take, so no cell is ever lost
+    const MAX_MOVES = 40;
+    let si = 0, di = 0, moved = 0;
+    while (si < surplus.length && di < deficit.length && moved < MAX_MOVES) {
+      const S = surplus[si], D = deficit[di];
+      const ty = D.top - 1;
+      const dstIdx = ty * w + D.x;
+      // headroom above is enough — the CA keeps a raised surface intact,
+      // and demanding side walls would forbid the middle of wide ponds
+      const headroom = ty - 1 < 0 || grid[dstIdx - w] === P.EMPTY;
+      if (ty >= 0 && grid[dstIdx] === P.EMPTY && headroom) {
+        // raise the shorter column's surface
+        grid[dstIdx] = P.WATER; life[dstIdx] = 0; temp[dstIdx] = 0;
+        D.top--; D.need--;
+        // lower the taller column's surface by one
+        const srcIdx = S.top * w + S.x;
+        grid[srcIdx] = P.EMPTY; life[srcIdx] = 0; temp[srcIdx] = 0;
+        S.top++; S.need--;
+        moved++;
+        if (S.need <= 0) si++;
+        if (D.need <= 0) di++;
+      } else {
+        di++;   // blocked this pass — retry after the CA reshuffles
+      }
+    }
   }
 
   // Flood-fill connected regions of one particle type into clusters
@@ -1460,36 +1581,9 @@ class StickFigure {
       this.vy = Math.max(-2.4, this.vy - accel);
       this.y += this.vy;
       this.libAura = Math.min(2.5, this.libAura + 0.01);
-      // trail of light particles
-      if (this.libTimer % 2 === 0) {
-        this.libParticles.push({
-          x: randRange(-5, 5), y: randRange(0, 6),
-          vx: randRange(-0.2, 0.2), vy: randRange(0.5, 1.5),
-          life: 30 + rand(25), maxLife: 55,
-          size: randRange(0.6, 1.8)
-        });
-      }
-      // reached top — burst into light
-      if (this.y < 10) {
-        this.y = 10;
-        this.libStage = 3;
-        this.libTimer = 0;
-        // big burst of particles
-        for (let i = 0; i < 40; i++) {
-          const ang = (i / 40) * Math.PI * 2;
-          const sp = randRange(1, 4);
-          this.libParticles.push({
-            x: 0, y: 0,
-            vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
-            life: 50 + rand(40), maxLife: 90,
-            size: randRange(1, 2.5)
-          });
-        }
-      }
-    } else if (this.libStage === 3) {
-      // departure — dissolve into light at the top
-      this.libAura = Math.max(0, this.libAura - 0.02);
-      if (this.libTimer > 80) {
+      // reached the top — no burst: the being simply passes through,
+      // carried by the beam until it leaves the world entirely
+      if (this.y < -this.bodyH * 2) {
         this.liberated = true;
         this.dead = true;
         this.isLiberating = false;
@@ -1541,7 +1635,6 @@ class StickFigure {
         const t = clamp(this.libTimer / 240, 0, 1);
         color = `rgb(255,${Math.floor(lerp(230,250,t))},${Math.floor(lerp(120,180,t))})`;
       }
-      if (this.libStage >= 3) alpha = Math.max(0, 1 - this.libTimer / 80);
     } else if (this.state === STATES.BURNING) {
       color = "#FF5533";
     } else if (this.state === STATES.DROWNING) {
@@ -1565,9 +1658,38 @@ class StickFigure {
     const torsoBot = this.bodyH/2 - 6;
     const hipY = torsoBot;
 
-    // === Liberation marks — quiet, minimal: white circle(s) around an
-    // enlarged meditating figure. No blazing aura, no beam, no halo cloud. ===
+    // === Liberation marks — a quiet column of heaven's light descends
+    // from the top of the world onto the being: a passage, not a blast.
+    // Drawn beneath the figure so its silhouette stays clearly visible. ===
     if (this.isLiberating) {
+      // beam intensity: fades in through stillness & transmutation,
+      // holds steady through the ascent; gentle breathing pulse
+      const pulse = 0.04 * Math.sin(this.libTimer * 0.06);
+      const beamA = this.libStage === 0
+        ? Math.min(0.30, this.libAura * 0.3)
+        : this.libStage === 1
+          ? Math.min(0.38, 0.18 + this.libAura * 0.14)
+          : 0.42 + pulse;
+      const halfW = 16 + this.libAura * 5;
+      const topY = Math.min(-this.y, 0) - 4;   // always reach the screen top
+      const botY = 26;
+      const grad = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+      grad.addColorStop(0, "rgba(255,246,214,0)");
+      grad.addColorStop(0.32, `rgba(255,246,214,${beamA * 0.55})`);
+      grad.addColorStop(0.5, `rgba(255,252,240,${beamA})`);
+      grad.addColorStop(0.68, `rgba(255,246,214,${beamA * 0.55})`);
+      grad.addColorStop(1, "rgba(255,246,214,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(-halfW, topY, halfW * 2, botY - topY);
+
+      // soft light pooling where the beam meets the figure
+      ctx.globalAlpha = alpha * (this.libStage >= 2 ? 0.5 : 0.3);
+      ctx.fillStyle = "rgba(255,250,230,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(0, 14, halfW * 0.9, 5, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+
       // the being grows as it transcends
       const grow = 1 + Math.min(0.6, this.libAura * 0.3 + (this.libStage >= 2 ? 0.15 : 0));
       ctx.scale(grow, grow);
