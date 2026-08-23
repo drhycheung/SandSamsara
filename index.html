@@ -171,6 +171,7 @@ const CONFIG = {
     wanderSpeed: 1.5,
     dragLerp: 0.15,
     criticalMassFigures: 5,
+    coverageThreshold: 0.8,
     edgeFireThreshold: 120,
   },
   explosion: {
@@ -2184,7 +2185,41 @@ class FireWheel {
     this.flameParticles = [];
   }
 
-  update(engine, figures, samsara) {
+  combinedCoverage(engine, wheels) {
+    const cs = CONFIG.grid.cellSize;
+    const screenWidth = engine.w * cs;
+    const screenHeight = engine.h * cs;
+    let coveredArea = 0;
+
+    // Merge each scanline's wheel intervals so overlaps count only once.
+    for (let y = cs / 2; y < screenHeight; y += cs) {
+      const intervals = [];
+      for (const wheel of wheels) {
+        if (!wheel.active || (wheel.state !== "active" && wheel.state !== "spawning")) continue;
+        const dy = y - wheel.y;
+        const spanSquared = wheel.radius * wheel.radius - dy * dy;
+        if (spanSquared <= 0) continue;
+        const span = Math.sqrt(spanSquared);
+        const left = Math.max(0, wheel.x - span);
+        const right = Math.min(screenWidth, wheel.x + span);
+        if (right > left) intervals.push([left, right]);
+      }
+      intervals.sort((a, b) => a[0] - b[0]);
+      let mergedRight = -1;
+      for (const [left, right] of intervals) {
+        if (left > mergedRight) {
+          coveredArea += right - left;
+          mergedRight = right;
+        } else if (right > mergedRight) {
+          coveredArea += right - mergedRight;
+          mergedRight = right;
+        }
+      }
+    }
+    return coveredArea * cs / (screenWidth * screenHeight);
+  }
+
+  update(engine, figures, samsara, wheels) {
     const cw = engine.w * CONFIG.grid.cellSize;
     const ch = engine.h * CONFIG.grid.cellSize;
     this.maxRadius = Math.sqrt(cw*cw + ch*ch) / 2;
@@ -2297,8 +2332,9 @@ class FireWheel {
       if (engine.get(ex, ey) === P.EMPTY) engine.set(ex, ey, P.FIRE);
     }
 
-    // Explosion when wheel fills the screen
-    if (this.state === "active" && this.radius >= this.maxRadius * 0.95) {
+    // Explode when the combined wheel area covers most of the screen.
+    if (!samsara.exploding && this.state === "active" &&
+        this.combinedCoverage(engine, wheels) >= CONFIG.fireWheel.coverageThreshold) {
       this.state = "exploding";
       samsara.triggerExplosion(this.x, this.y);
     }
@@ -3139,7 +3175,7 @@ class Game {
     // Remove dead figures
     this.figures = this.figures.filter(f => !f.dead || f.isLiberating);
 
-    for (const w of this.wheels) w.update(this.engine, this.figures, this.samsara);
+    for (const w of this.wheels) w.update(this.engine, this.figures, this.samsara, this.wheels);
     // Remove spent wheels
     this.wheels = this.wheels.filter(w => w.active || w.radius > 0);
     this.samsara.update(this.engine, this.figures, this.wheels);

@@ -30,7 +30,7 @@ Beings are driven by **greed** and **fear**. Greed draws them toward lush greene
 
 Death is never the end. Whether consumed by flame or magma, drowned in water, or killed by their own kind, the dead are immediately reborn. One life leaves as another arrives, birth and death following one another without pause: the most direct expression of samsara.
 
-The realm is also haunted by the **Wheel of Karmic Fire**, the embodiment of collective unwholesome karma. It traverses the world on its own, but the player can also drag and steer it. The more beings drawn into its pull, the heavier the collective karma becomes and the larger the wheel grows. As it expands, beings are pressed toward the world's edges, where border flames arise and seal off their escape. When collective karma reaches its critical point, ripened karma brings about the world's collapse: fire sweeps across the realm, particles scatter, and the entire Sand Realm burns away.
+The realm is also haunted by the **Wheel of Karmic Fire**, the embodiment of collective unwholesome karma. It traverses the world on its own, but the player can also drag and steer it. The more beings drawn into its pull, the heavier the collective karma becomes and the larger the wheel grows. As it expands, beings are pressed toward the world's edges, where border flames arise and seal off their escape. When the wheel's expansion reaches its limit, the world collapses: fire sweeps across the realm, particles scatter, and the entire Sand Realm burns away.
 
 Destruction is not punishment but the inevitable result of causes and conditions converging. After a brief stillness, the world resets and another generation of unknowing beings is born: without memory, without a past, the cycle begins again.
 
@@ -51,7 +51,7 @@ The game contains no written story, prompts or narration. Players can only obser
 | Left-click and hold the Wheel of Karmic Fire | Steer the wheel; on release it resumes wandering on its own |
 | Right-click (hold and drag) | Cut plants (they turn to ash) |
 | Touch devices | A single finger acts as the left button: draw elements, drag beings or steer the wheel; the canvas and controls adapt to phones/tablets |
-| Toolbar at the top | Switch elements, adjust brush size, clear the world, summon the wheel manually |
+| Toolbar at the top | Switch elements, adjust brush size, clear the world, summon the wheel manually, add a new soul |
 
 ---
 
