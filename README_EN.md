@@ -42,16 +42,6 @@ The game contains no written story, prompts or narration. Players can only obser
 
 ---
 
-## Official Naming
-
-| Item | Name |
-|------|------|
-| Chinese title | 沙界轮回 |
-| English title | Sand Samsara |
-| Repository name | SandSamsara |
-
----
-
 ## Controls
 
 | Action | Effect |
