@@ -877,6 +877,25 @@ class StickFigure {
     return true;
   }
 
+  // Precise hazard probe along the body column. The coarse centre-window
+  // sampler misses the head/feet rows, and magma that flows UNDER an
+  // already-standing figure never overlaps the body at all — both let
+  // beings survive what should be lethal contact. Includes the support
+  // cell directly beneath the feet: standing on molten rock is fatal.
+  probeBodyHazards(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const top = Math.floor((this.y - this.bodyH/2) / cs);
+    const bot = Math.floor((this.y + this.bodyH/2 + 1) / cs);
+    let fire = false, magma = false;
+    for (let cy = top; cy <= bot; cy++) {
+      const t = engine.get(gx, cy);
+      if (t === P.MAGMA) magma = true;
+      else if (t === P.FIRE) fire = true;
+    }
+    return { fire, magma };
+  }
+
   // Fire wheels are feared universally — every being senses them from afar.
   // Returns true (and caches this._threat) if a wheel is dangerously close.
   detectWheelThreat(wheels) {
@@ -1049,6 +1068,12 @@ class StickFigure {
     this.animTimer++;
     if (this.animTimer >= 30) { this.animTimer = 0; this.animFrame = (this.animFrame + 1) % 2; }
 
+    // Precise body-column hazard probe — runs BEFORE any early return so
+    // dragged or stunned figures cannot be ferried through molten rock.
+    // Magma contact = instant death, always.
+    const bodyHaz = this.probeBodyHazards(engine);
+    if (bodyHaz.magma) { this.die(engine); return; }
+
     // Mouse drag overrides everything
     if (this.isDragged) {
       this.state = STATES.DRAGGED;
@@ -1065,14 +1090,14 @@ class StickFigure {
 
     const env = this.sampleEnvironment(engine);
 
-    // Magma contact = instant death
+    // Magma contact = instant death (coarse sample + precise body column)
     if (env.magmaContact) {
       this.die(engine);
       return;
     }
 
     // Fire contact = lethal burning
-    if (env.fireContact) {
+    if (env.fireContact || bodyHaz.fire) {
       this.state = STATES.BURNING;
       this.burnTimer = 60;
       this.health -= 10;
@@ -1322,10 +1347,10 @@ class StickFigure {
     if (this.libStage === 0) {
       // stillness — settles into meditation
       this.libAura = Math.min(1, this.libAura + 0.02);
-      if (this.libTimer > 45) { this.libStage = 1; this.libTimer = 0; }
+      if (this.libTimer > 75) { this.libStage = 1; this.libTimer = 0; }
     } else if (this.libStage === 1) {
       // transmutation — golden glow intensifies, aura grows
-      this.libAura = Math.min(1.5, this.libAura + 0.015);
+      this.libAura = Math.min(1.5, this.libAura + 0.01);
       // emit rising sparkles
       if (this.libTimer % 3 === 0) {
         this.libParticles.push({
@@ -1335,11 +1360,12 @@ class StickFigure {
           size: randRange(0.8, 2)
         });
       }
-      if (this.libTimer > 90) { this.libStage = 2; this.libTimer = 0; }
+      if (this.libTimer > 150) { this.libStage = 2; this.libTimer = 0; }
     } else if (this.libStage === 2) {
-      // ascension — accelerate upward, fly to top of screen
-      const accel = 0.04;
-      this.vy = Math.max(-4, this.vy - accel);
+      // ascension — slow, contemplative rise to the top of the world,
+      // unhurried enough for the player to witness
+      const accel = 0.03;
+      this.vy = Math.max(-2.4, this.vy - accel);
       this.y += this.vy;
       this.libAura = Math.min(2.5, this.libAura + 0.01);
       // trail of light particles
@@ -1370,8 +1396,8 @@ class StickFigure {
       }
     } else if (this.libStage === 3) {
       // departure — dissolve into light at the top
-      this.libAura = Math.max(0, this.libAura - 0.03);
-      if (this.libTimer > 50) {
+      this.libAura = Math.max(0, this.libAura - 0.02);
+      if (this.libTimer > 80) {
         this.liberated = true;
         this.dead = true;
         this.isLiberating = false;
@@ -1416,14 +1442,14 @@ class StickFigure {
     if (this.isLiberating) {
       if (this.libStage === 1) {
         // transmutation: white → gold
-        const t = clamp(this.libTimer / 90, 0, 1);
+        const t = clamp(this.libTimer / 150, 0, 1);
         color = `rgb(${Math.floor(lerp(240,255,t))},${Math.floor(lerp(240,220,t))},${Math.floor(lerp(240,90,t))})`;
       } else if (this.libStage >= 2) {
         // ascension: bright white-gold, intensifying
-        const t = clamp(this.libTimer / 120, 0, 1);
+        const t = clamp(this.libTimer / 240, 0, 1);
         color = `rgb(255,${Math.floor(lerp(230,250,t))},${Math.floor(lerp(120,180,t))})`;
       }
-      if (this.libStage >= 3) alpha = Math.max(0, 1 - this.libTimer / 50);
+      if (this.libStage >= 3) alpha = Math.max(0, 1 - this.libTimer / 80);
     } else if (this.state === STATES.BURNING) {
       color = "#FF5533";
     } else if (this.state === STATES.DROWNING) {
