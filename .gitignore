@@ -7,6 +7,9 @@
 # Keep Markdown files anywhere
 !**/*.md
 
+# Do not publish internal planning files
+/.opencode/
+
 # Keep the intended root files
 !/index.html
 !/screenshot.png
