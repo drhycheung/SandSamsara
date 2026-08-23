@@ -1,6 +1,6 @@
 <div align="center">
 
-# Sand-Samsara · 沙界轮回
+# Sand Samsara · 沙界轮回
 
 A formless realm constructed of particles and dust. All beings drift with karma; every destiny unfolds by conditions alone.
 
@@ -14,13 +14,13 @@ English ｜ [简体中文](README.md)
 
 ## Opening Statement & Creative Provenance
 
-Sand-Samsara is a modern artistic reimagining of the 2005 classic particle sandbox game *Hell of Sand*. All karmic and samsara-themed mechanics are creative artistic interpretations, not orthodox religious doctrine. There is no in-game text or storyline. This documentation only provides background context for interested readers.
+Sand Samsara is a modern artistic reimagining of the 2005 classic particle sandbox game *Hell of Sand*. All karmic and samsara-themed mechanics are creative artistic interpretations, not orthodox religious doctrine. There is no in-game text or storyline. This documentation only provides background context for interested readers.
 
 ---
 
 ## Worldview & Gameplay
 
-This work is a falling-particle sandbox art piece that constructs the Realm of Sand — a nameless world condensed from dust and particles. Playing as an onlooker, you may scatter sand, fire, water, magma and other substances to shape the circumstances of this world, watching countless stick-figure beings drift through their fortunes amid the cycle of rebirth. All beings are born here in innocence, carrying no memory of past lives, knowing nothing of samsara and unable to grasp causation. Their temperaments differ: some drift numbly through muddled days; some stir restlessly, rushing about without purpose; some toil wearily, striving at all costs to avoid suffering; others cling to deep obsessions, relentlessly seeking the world's edge and yearning for everlasting existence. All their flight, struggle and pursuit arise from ignorance and deluded attachment: beings imagine they can find peace by altering outward circumstances, yet remain trapped in the fate of endless turning — merely avoiding pain and struggling to survive can never arrive at true liberation.
+This work is a falling-particle sandbox art piece that constructs the Realm of Sand — a nameless world condensed from dust and particles. You are no mere spectator but an external condition within this world: with one hand you scatter sand, fire, water, magma and other substances, shaping the circumstances of this world; with the other you watch countless stick-figure beings drift through their fortunes amid the cycle of rebirth. All beings are born here in innocence, carrying no memory of past lives, knowing nothing of samsara and unable to grasp causation. Their temperaments differ: some drift numbly through muddled days; some stir restlessly, rushing about without purpose; some toil wearily, striving at all costs to avoid suffering; others cling to deep obsessions, relentlessly seeking the world's edge and yearning for everlasting existence. All their flight, struggle and pursuit arise from ignorance and deluded attachment: beings imagine they can find peace by altering outward circumstances, yet remain trapped in the fate of endless turning — merely avoiding pain and struggling to survive can never arrive at true liberation.
 
 Hidden within this world lurks the Wheel of Karmic Fire, the concrete embodiment of the collective unwholesome karma accumulated by all beings. The wheel may be dragged and steered by the player, or traverse the world on its own; any being drawn in by its pull becomes entangled in collective karma. The more beings it draws in, the heavier the karmic bonds grow, and the vaster the wheel becomes.
 
@@ -41,7 +41,7 @@ From beginning to end, the game contains no written story, no prompts and no nar
 | Item | Name |
 |------|------|
 | Chinese title | 沙界轮回 |
-| English title | Sand-Samsara |
+| English title | Sand Samsara |
 | Repository name | SandSamsara |
 
 ---

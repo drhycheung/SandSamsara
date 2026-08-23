@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>沙界轮回 Sand-Samsara</title>
+<title>沙界轮回 Sand Samsara</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -171,7 +171,7 @@ const CONFIG = {
   explosion: {
     shockwaveSpeed: 12,
     destructionRate: 0.8,
-    phases: { implosion: 30, blast: 60, settle: 120, rebirth: 180 },
+    phases: { implosion: 30, blast: 60, settle: 320, rebirth: 40 },
   },
   plant: {
     growthInterval: 300,
@@ -2076,8 +2076,9 @@ class SamsaraManager {
         engine.explode(Math.floor(this.explosionX/cs), Math.floor(this.explosionY/cs), 14);
       }
     } else if (this.explosionPhase === 1) {
-      // blast wave — expanding destruction
+      // blast wave — expanding destruction; shake eases off gradually
       this.shockwaveRadius += CONFIG.explosion.shockwaveSpeed * 1.3;
+      this.screenShake = Math.max(this.screenShake, 20 - this.explosionTimer * 0.15);
       const cs = CONFIG.grid.cellSize;
       if (this.explosionTimer % 2 === 0) {
         const gr = Math.floor(this.shockwaveRadius / cs);
@@ -2108,7 +2109,9 @@ class SamsaraManager {
         this.explosionTimer = 0;
       }
     } else if (this.explosionPhase === 2) {
-      // settling — ash rain, fading fire
+      // settling — ash rain, fading fire; the world keeps rumbling for
+      // several seconds before the reset comes
+      this.screenShake = Math.max(this.screenShake, 10 * (1 - this.explosionTimer / phases.settle) + 3);
       if (this.explosionTimer % 4 === 0) {
         const cs = CONFIG.grid.cellSize;
         const ax = rand(engine.w);
