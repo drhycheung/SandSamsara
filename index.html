@@ -242,8 +242,11 @@ class ParticleEngine {
     this.scanDir = 1; // 1 = L->R, -1 = R->L
     this._imgData = null; // cached in render()
     // plant registry: rebuilt periodically so beings can sense greenery
-    // across the whole map without per-figure grid scans
+    // and water bodies across the whole map without per-figure scans
     this.plantList = [];        // [{x, y}] cell coords of every PLANT cell
+    this.plantClusters = [];    // [{x, y, size}] centroids in cell coords
+    this.waterClusters = [];    // [{x, y, size}] centroids in cell coords
+    this._cVisited = null;      // scratch buffer for flood fill
     this._plantScanCounter = 0;
   }
 
@@ -350,6 +353,40 @@ class ParticleEngine {
       }
     }
     this.plantList = list;
+    // cluster pass: groves and ponds as whole bodies {x, y, size}
+    if (!this._cVisited || this._cVisited.length !== this.size) {
+      this._cVisited = new Uint8Array(this.size);
+    }
+    this._cVisited.fill(0);
+    this.plantClusters = this.buildClusters(P.PLANT);
+    this.waterClusters = this.buildClusters(P.WATER);
+  }
+
+  // Flood-fill connected regions of one particle type into clusters
+  // with a centroid and cell count — the "size" a being can sense.
+  buildClusters(t) {
+    const clusters = [];
+    const grid = this.grid, w = this.w, h = this.h;
+    const visited = this._cVisited;
+    const stack = [];
+    for (let i0 = 0; i0 < this.size; i0++) {
+      if (visited[i0] || grid[i0] !== t) continue;
+      stack.length = 0;
+      stack.push(i0);
+      visited[i0] = 1;
+      let size = 0, sx = 0, sy = 0;
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % w, y = (i / w) | 0;
+        size++; sx += x; sy += y;
+        if (x > 0 && !visited[i-1] && grid[i-1] === t) { visited[i-1] = 1; stack.push(i-1); }
+        if (x < w-1 && !visited[i+1] && grid[i+1] === t) { visited[i+1] = 1; stack.push(i+1); }
+        if (y > 0 && !visited[i-w] && grid[i-w] === t) { visited[i-w] = 1; stack.push(i-w); }
+        if (y < h-1 && !visited[i+w] && grid[i+w] === t) { visited[i+w] = 1; stack.push(i+w); }
+      }
+      clusters.push({ x: sx / size, y: sy / size, size });
+    }
+    return clusters;
   }
 
   updateCell(x, y) {
@@ -911,7 +948,8 @@ class StickFigure {
     return false;
   }
 
-  // Sense elemental hazards (fire / magma / water).
+  // Sense elemental hazards (fire / magma only — water is an attraction,
+  // not a terror; beings are drawn to its shore, never into its depths).
   // Cautious beings (low greed) sense danger from farther away;
   // adventurous ones only notice it when very close.
   // Throttled to every 4 frames; result cached in this._elemThreat.
@@ -931,10 +969,8 @@ class StickFigure {
         const cx = gx+dx, cy = gy+dy;
         if (!engine.inBounds(cx, cy)) continue;
         const t = engine.get(cx, cy);
-        if (t === P.FIRE || t === P.MAGMA || t === P.WATER) {
-          // weight: fire/magma scarier than water; distance matters
-          let d = dx*dx + dy*dy;
-          if (t === P.WATER) d *= 0.7;   // water feels less immediately lethal
+        if (t === P.FIRE || t === P.MAGMA) {
+          const d = dx*dx + dy*dy;
           if (d < nearestD) { nearestD = d; nearest = { x: cx, y: cy, type: t }; }
         }
       }
@@ -943,23 +979,35 @@ class StickFigure {
     return nearest;
   }
 
-  // Scan for plants via the engine's cached plant list (whole-map sensing:
-  // even a distant plant is felt). Throttled by caller. Nearest plant cell
-  // is cached in this.oasisTarget.
+  // Choose the most alluring sanctuary among plant groves and ponds.
+  // Two factors, as the eye of hunger sees them:
+  //   size  — logarithmic, so vast groves do not endlessly dominate
+  //   distance — strong falloff, so what grows nearby suffices
+  //   score = (1 + ln(size+1)/2) ÷ (1 + distance / D),  D ≈ 140px
+  // Thus a modest patch at one's feet outweighs a great forest afar,
+  // while equal distances are won by the greater body. Throttled by
+  // caller; result cached in this.oasisTarget as {x, y, type} in cell
+  // coords (type: "plant" | "water").
   findOasis(engine) {
-    const plants = engine.plantList;
-    if (!plants || plants.length === 0) { this.oasisTarget = null; return false; }
     const cs = CONFIG.grid.cellSize;
-    let nearest = null;
-    let nearestD = Infinity;
-    for (let k = 0; k < plants.length; k++) {
-      const p = plants[k];
-      const dx = p.x - this.x, dy = p.y - this.y;
-      const d = dx*dx + dy*dy;
-      if (d < nearestD) { nearestD = d; nearest = p; }
-    }
-    this.oasisTarget = nearest;
-    return nearest !== null;
+    const fallDist = cs * 35;
+    let best = null, bestScore = 0.8;  // below this, a distant speck lures no one
+    const consider = (clusters, weight, type) => {
+      for (const c of clusters) {
+        const dxp = c.x * cs - this.x;
+        const dyp = c.y * cs - this.y;
+        const d = Math.sqrt(dxp*dxp + dyp*dyp);
+        const s = weight * (1 + Math.log(c.size + 1) / 2) / (1 + d / fallDist);
+        if (s > bestScore) {
+          bestScore = s;
+          best = { x: Math.round(c.x), y: Math.round(c.y), type };
+        }
+      }
+    };
+    if (engine.plantClusters) consider(engine.plantClusters, 1.0, "plant");
+    if (engine.waterClusters) consider(engine.waterClusters, 0.85, "water");
+    this.oasisTarget = best;
+    return best !== null;
   }
 
   // Check if near water surface (happy) vs submerged (drowning)
@@ -1009,33 +1057,46 @@ class StickFigure {
     this.state = STATES.FLEE;
   }
 
-  // Walk toward the sensed plant. Greedy/adventurous beings will cross
-  // water or fire to reach it; cautious ones halt at the edge of danger
-  // and wait anxiously — behaviour varies with each being's temperament.
+  // Walk toward the chosen sanctuary — a plant grove, or the shore of a
+  // pond. Nobody wades into water: its edge IS the destination. Fire or
+  // magma on the path is another matter: greedy beings may brave it,
+  // cautious ones halt and wait — behaviour varies with temperament.
   approachOasis(engine) {
     const C = CONFIG.stickFigures;
     const cs = CONFIG.grid.cellSize;
+    const isWater = this.oasisTarget.type === "water";
+    const arriveDist = isWater ? cs * 3 : cs * 2;
     const ox = this.oasisTarget.x * cs + cs/2;
     const dx = ox - this.x;
-    if (Math.abs(dx) > cs * 2) {
+    if (Math.abs(dx) > arriveDist) {
       this.state = STATES.WALK;
       this.direction = dx > 0 ? 1 : -1;
       const stepX = this.direction * C.walkSpeed * 0.9;
       // hazard check on the intended path
       const aheadGX = Math.floor((this.x + stepX * 6) / cs);
       const footY = Math.floor((this.y + this.bodyH/2 - 2) / cs);
-      let hazardAhead = false;
+      let fireAhead = false, magmaAhead = false, waterAhead = false;
       for (let probe = -1; probe <= 2; probe++) {
-        const t = engine.get(aheadGX + this.direction * probe, footY);
-        if (t === P.FIRE || t === P.MAGMA || t === P.WATER) { hazardAhead = true; break; }
+        for (let row = -1; row <= 2; row++) {   // rows around foot level
+          const t = engine.get(aheadGX + this.direction * probe, footY + row);
+          if (t === P.FIRE) fireAhead = true;
+          else if (t === P.MAGMA) magmaAhead = true;
+          else if (t === P.WATER) waterAhead = true;
+        }
       }
-      if (hazardAhead && this.greed < 0.7) {
-        // too fearful to cross — hesitate at the shore
+      if (waterAhead) {
+        // water lies just ahead — this is the shore. Stop here and rest.
         this.state = STATES.IDLE;
         this.vx *= 0.5;
         return;
       }
-      // greedy enough: walk on (and jump obstacles/pits like before)
+      if ((fireAhead || magmaAhead) && this.greed < 0.7) {
+        // too fearful to cross fire — hesitate at the edge
+        this.state = STATES.IDLE;
+        this.vx *= 0.5;
+        return;
+      }
+      // walk on (and jump obstacles/pits like before)
       this.vx = stepX;
       if (!this.canMoveTo(engine, this.x + this.vx, this.y) && this.onGround(engine)) {
         this.vy = -2.8;
@@ -1043,7 +1104,7 @@ class StickFigure {
         this.vy = -1.8; // occasional hop
       }
     } else {
-      // arrived — rest contentedly among the greenery
+      // arrived — rest contentedly among the greenery (or at the water's edge)
       this.state = STATES.IDLE;
       this.vx = 0;
     }
@@ -1152,9 +1213,9 @@ class StickFigure {
         if (elemT) {
           const td = Math.sqrt(dist2(this.x, this.y, elemT.x*cs + cs/2, elemT.y*cs + cs/2));
           fearStrength = clamp(1 - td / fearRangePx, 0, 1);
-          if (elemT.type === P.WATER) fearStrength *= 0.8; // water daunts less than flame
         }
-        // a sensed plant exerts pull even from afar; greedy beings feel it more
+        // a sensed sanctuary (grove or pond) exerts pull even from afar;
+        // greedy beings feel it more
         const plantPull = this.oasisTarget ? 0.35 + 0.65 * this.greed : 0;
 
         if (elemT && fearStrength > plantPull) {
@@ -1164,7 +1225,7 @@ class StickFigure {
           this.happy = false;
           this.fleeFromThreat(engine);
         } else if (this.oasisTarget) {
-          // greed (or simple curiosity) draws them toward the greenery
+          // greed (or simple curiosity) draws them toward the greenery or shore
           this.approachOasis(engine);
           this.happy = true;
         } else {
