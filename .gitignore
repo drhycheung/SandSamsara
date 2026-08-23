@@ -1,0 +1,15 @@
+# Ignore everything by default
+*
+
+# Allow Git to traverse directories
+!*/
+
+# Keep Markdown files anywhere
+!**/*.md
+
+# Keep the intended root files
+!/index.html
+!/screenshot.png
+
+# Keep this policy in the repository
+!/.gitignore
