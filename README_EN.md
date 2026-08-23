@@ -16,6 +16,8 @@ English ｜ [简体中文](README.md)
 
 Sand Samsara is a modern artistic reimagining of the 2005 classic particle sandbox game *Hell of Sand*. All karmic and samsara-themed mechanics are creative artistic interpretations, not orthodox religious doctrine. There is no in-game text or storyline. This documentation only provides background context for interested readers.
 
+> **Content note:** The game includes depictions of fire, death, struggle, and world destruction that may cause discomfort for some players. Please play at your discretion.
+
 ---
 
 ## Worldview & Gameplay
