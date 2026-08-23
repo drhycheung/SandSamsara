@@ -375,16 +375,24 @@ class ParticleEngine {
       stack.push(i0);
       visited[i0] = 1;
       let size = 0, sx = 0, sy = 0;
+      let minX = w, maxX = 0, minY = h, maxY = 0;
       while (stack.length) {
         const i = stack.pop();
         const x = i % w, y = (i / w) | 0;
         size++; sx += x; sy += y;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
         if (x > 0 && !visited[i-1] && grid[i-1] === t) { visited[i-1] = 1; stack.push(i-1); }
         if (x < w-1 && !visited[i+1] && grid[i+1] === t) { visited[i+1] = 1; stack.push(i+1); }
         if (y > 0 && !visited[i-w] && grid[i-w] === t) { visited[i-w] = 1; stack.push(i-w); }
         if (y < h-1 && !visited[i+w] && grid[i+w] === t) { visited[i+w] = 1; stack.push(i+w); }
       }
-      clusters.push({ x: sx / size, y: sy / size, size });
+      clusters.push({
+        x: sx / size, y: sy / size, size,
+        minX, maxX, minY, maxY
+      });
     }
     return clusters;
   }
@@ -984,23 +992,29 @@ class StickFigure {
   //   size  — logarithmic, so vast groves do not endlessly dominate
   //   distance — strong falloff, so what grows nearby suffices
   //   score = (1 + ln(size+1)/2) ÷ (1 + distance / D),  D ≈ 140px
-  // Thus a modest patch at one's feet outweighs a great forest afar,
-  // while equal distances are won by the greater body. Throttled by
-  // caller; result cached in this.oasisTarget as {x, y, type} in cell
-  // coords (type: "plant" | "water").
+  // Distance is measured to the cluster's BOUNDING BOX (nearest point),
+  // not its centroid — a hedge around one's feet is truly near, even if
+  // its centre of mass lies far away. Thus a modest patch at one's side
+  // outweighs a great forest afar, while equal distances are won by the
+  // greater body. Throttled by caller; result cached in this.oasisTarget
+  // as {x, y, type} in cell coords (type: "plant" | "water").
   findOasis(engine) {
     const cs = CONFIG.grid.cellSize;
     const fallDist = cs * 35;
     let best = null, bestScore = 0.8;  // below this, a distant speck lures no one
     const consider = (clusters, weight, type) => {
       for (const c of clusters) {
-        const dxp = c.x * cs - this.x;
-        const dyp = c.y * cs - this.y;
-        const d = Math.sqrt(dxp*dxp + dyp*dyp);
+        // nearest point on the bounding box, in pixels
+        const bx0 = c.minX * cs, bx1 = (c.maxX + 1) * cs;
+        const by0 = c.minY * cs, by1 = (c.maxY + 1) * cs;
+        const nx = clamp(this.x, bx0, bx1);
+        const ny = clamp(this.y, by0, by1);
+        const d = Math.sqrt(dist2(this.x, this.y, nx, ny));
         const s = weight * (1 + Math.log(c.size + 1) / 2) / (1 + d / fallDist);
         if (s > bestScore) {
           bestScore = s;
-          best = { x: Math.round(c.x), y: Math.round(c.y), type };
+          // walk target: the nearest point ON the body, in cell coords
+          best = { x: Math.floor(nx / cs), y: Math.floor(ny / cs), type };
         }
       }
     };
