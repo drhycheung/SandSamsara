@@ -4,6 +4,8 @@
 
 A formless realm constructed of particles and dust. All beings drift with karma; every destiny unfolds by conditions alone.
 
+**▶ Play Online: <https://drhycheung.github.io/SandSamsara/>**
+
 English ｜ [简体中文](README.md)
 
 </div>
@@ -16,7 +18,7 @@ Sand-Samsara is a modern artistic reimagining of the 2005 classic particle sandb
 
 ---
 
-## Worldview Lore (Final)
+## Worldview Lore
 
 This is Sand-Samsara, a formless realm constructed of particles and dust.
 
@@ -46,7 +48,7 @@ No in-game text or narration is presented. Following the Zen principle of "no es
 
 ---
 
-## Official Naming (Final)
+## Official Naming
 
 | Item | Name |
 |------|------|
@@ -74,6 +76,28 @@ No in-game text or narration is presented. Following the Zen principle of "no es
 
 This is a pure static single-file web project with no backend, dependencies, or compilation required. After downloading all project files, simply double-click the `index.html` file in the root directory to launch the game directly in your default browser. All mainstream browsers are supported.
 
-### Web Server Deployment
+### GitHub Pages Deployment
 
-The project can be deployed on any static web server, including GitHub Pages, Vercel, Nginx, Apache and more. Just upload all static project files to the website root directory with no extra configuration needed. The game will be accessible via your domain or server address.
+The project is deployed live via GitHub Pages: **<https://drhycheung.github.io/SandSamsara/>**
+
+To deploy your own copy:
+
+1. Fork this repository to your GitHub account, or push your own copy
+2. Open the repository page, then go to **Settings → Pages**
+3. Under **Build and deployment**, set **Source** to **Deploy from a branch**
+4. Select the `master` (or `main`) branch with the `/ (root)` directory, then click **Save**
+5. After 1–2 minutes of building, the site will be available at `https://<username>.github.io/<repository-name>/`
+
+### Vercel Deployment
+
+1. Log in to [Vercel](https://vercel.com) and click **Add New → Project**
+2. Import this project's GitHub repository
+3. Keep the default settings (Framework Preset: **Other**) and click **Deploy**
+4. Once deployed, access it via the assigned Vercel domain, or bind a custom domain as needed
+
+### Nginx / Apache Deployment
+
+Upload all project files to your server's web root — no extra configuration required:
+
+- **Nginx**: place the files in `/usr/share/nginx/html/` (or your configured `root` directory)
+- **Apache**: place the files in `/var/www/html/`

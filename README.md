@@ -4,6 +4,8 @@
 
 一座由微尘与粒子构成的无名世间。众生随业浮沉，万般命运，只可随缘。
 
+**▶ 在线试玩 Play Online：<https://drhycheung.github.io/SandSamsara/>**
+
 [English](README_EN.md) ｜ 简体中文
 
 </div>
@@ -16,7 +18,7 @@
 
 ---
 
-## 世界观叙事（最终定稿）
+## 世界观叙事
 
 这里是沙界，一座由微尘与粒子构成的无名世间。
 
@@ -46,7 +48,7 @@
 
 ---
 
-## 项目正式定名（最终版）
+## 项目正式定名
 
 | 项目 | 定名 |
 |------|------|
@@ -74,6 +76,28 @@
 
 本项目为纯静态单文件网页，无后端、无依赖、无需编译。下载项目全部文件后，直接双击根目录下的 `index.html` 文件，即可用默认浏览器打开游玩，支持所有主流浏览器。
 
-### Web 服务器部署方式
+### GitHub Pages 部署
 
-可部署至任意静态网页服务器，包括 GitHub Pages、Vercel、Nginx、Apache 等。只需将项目所有静态文件直接上传至网站根目录，无需额外配置，访问对应域名/地址即可在线游玩。
+本项目已通过 GitHub Pages 在线部署：**<https://drhycheung.github.io/SandSamsara/>**
+
+如需自行部署一份：
+
+1. 将本仓库 Fork 至你的 GitHub 账号，或推送你自己的副本
+2. 进入仓库页面，依次打开 **Settings → Pages**
+3. 在 **Build and deployment** 下，将 **Source** 设为 **Deploy from a branch**
+4. **Branch** 选择 `master`（或 `main`），目录选择 `/ (root)`，点击 **Save**
+5. 等待 1–2 分钟构建完成，即可通过 `https://<用户名>.github.io/<仓库名>/` 访问
+
+### Vercel 部署
+
+1. 登录 [Vercel](https://vercel.com)，点击 **Add New → Project**
+2. 导入本项目的 GitHub 仓库
+3. 保持默认配置（Framework Preset 选择 **Other**），直接点击 **Deploy**
+4. 部署完成后即可通过 Vercel 分配的域名访问，亦可按需绑定自定义域名
+
+### Nginx / Apache 部署
+
+将项目全部文件上传至服务器站点根目录，无需任何额外配置：
+
+- **Nginx**：放置于 `/usr/share/nginx/html/`（或你自行配置的 `root` 目录）
+- **Apache**：放置于 `/var/www/html/`
