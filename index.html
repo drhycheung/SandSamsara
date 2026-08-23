@@ -791,6 +791,7 @@ class ParticleEngine {
         }
         return;
       }
+      if (nt === P.ASH) { this.grid[ni] = P.EMPTY; continue; }
       if (nt === P.OIL && chance(0.5)) { this.setCell(ni, P.FIRE, 120, 255); }
       if (nt === P.GUNPOWDER) { this.explode(nx, ny, 4); return; }
       if (nt === P.PLANT && chance(0.3)) { this.setCell(ni, P.FIRE, 80, 200); }
