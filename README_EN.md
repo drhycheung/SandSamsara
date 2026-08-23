@@ -18,55 +18,33 @@ Sand-Samsara is a modern artistic reimagining of the 2005 classic particle sandb
 
 ---
 
-## About This Game
+## Worldview & Gameplay
 
 This is a falling-particle sandbox game. Playing as an observer, you scatter sand, fire, water, magma and other substances across the world, watching the fortunes of countless stick-figure beings.
-
-All beings awaken in this world carrying no memory of the past.
-
-Some drift through their days in numb confusion; some pace restlessly without end; some struggle with all their might to evade disaster and survive; and others obsessively seek the edge of the world, yearning for escape and immortality.
-
-Yet merely fleeing suffering and struggling to stay alive brings no true liberation.
-
-Periodically, the Wheel of Karmic Fire descends upon this world. The vast majority of beings are consumed by flame, their memories erased entirely, and new lives are born here once more — over and over, cycle after cycle.
-
-Only a rare few beings — letting go of restlessness, fear, and the craving to chase outward — abide still and unmoved. For them, ascension becomes possible: they turn into golden bodies of light rising upward, leaving this world of sand forever, never to take part in the cycle again.
-
-Liberation is exceedingly rare; in most cycles, not even a single liberated one will appear.
-
-**You may intervene in the world, sowing circumstances of every kind, becoming one link among countless causes — yet you cannot control the final outcome.**
-
-Every ending arises from the convergence of innumerable conditions. Each being carries its own karmic inclination; the player is merely one external condition among many, never the sole arbiter of any destiny. Every fate can only be met with acceptance of conditions as they converge.
-
-You may create peril, or create an environment of peace — but you cannot appoint who attains liberation. Awakening can only arise from the transformation of a being's own mind.
-
----
-
-## Worldview Lore
 
 This is Sand-Samsara, a formless realm constructed of particles and dust.
 
 All beings awaken here with no memory of past lives. They do not understand karma, nor the cycle of rebirth. Some drift numbly, some wander restlessly, some struggle desperately to escape suffering, and others obsessively seek the world's edge, longing for permanence. All their running and striving arise from ignorance. They attempt to find peace by changing external circumstances, yet never escape the cycle itself.
 
-This world holds the Wheel of Karmic Fire — the embodiment of collective unwholesome karma woven together by all beings.
+Yet merely fleeing suffering and struggling to stay alive brings no true liberation.
 
-The wheel may be guided by the player's hand or roam freely on its own. Any being drawn into the wheel becomes entangled in shared karmic force. The more lives consumed, the heavier the collective karma grows, and the larger the wheel becomes.
+This world holds the Wheel of Karmic Fire — the embodiment of collective unwholesome karma woven together by all beings. Periodically the wheel manifests into the world, guided by the player's hand or roaming freely on its own. Any being drawn into the wheel becomes entangled in shared karmic force. The more lives consumed, the heavier the collective karma grows, and the larger the wheel becomes.
 
 As the wheel expands, beings are gradually pressed toward the world's edges. Flames spread along the boundaries, trapping all who remain. No escape is left. When collective karma reaches its critical peak, the world collapses naturally from its own ripened causes.
 
 Fire engulfs the realm, particles scatter, landscapes burn away, and one entire cycle of existence comes to an end.
 
-Destruction is not punishment. It is the inevitable fruit of conditioned causation. When collective karma matures, the world dissolves. After stillness settles, new beings awaken once more, and samsara turns again.
+Destruction is not punishment. It is the inevitable fruit of conditioned causation. When collective karma matures, the world dissolves. After stillness settles, new lives awaken once more with all memories erased, and samsara turns again.
 
 Within this endless cycle, almost all beings drift with karma, struggle in vain, and perish with the world's dissolution.
 
-Only a tiny few let go of fear, survival craving, and attachment. Calm and unshaken, they awaken inwardly. Their forms turn golden, surrounded by pure light particles. They rise upward, depart the dusty realm, and break free from this cycle forever.
+Only a rare few let go of fear, survival craving, restlessness, and the craving to chase outward. Calm and unshaken, they awaken inwardly, and ascension is triggered — golden forms appear, surrounded by points of light, rising upward as bodies of golden radiance, leaving this world of sand forever, breaking free from this cycle, never to return.
 
-The player exists as a detached observer. You may shape environments, spread elements, and guide the karmic wheel, becoming one condition among countless causes.
+Liberation is exceedingly rare; in most cycles, not even a single liberated one will appear.
 
-You may intervene in circumstances, but you cannot control outcomes. You may create outer conditions, but you cannot grant liberation.
+**You may intervene in the world, sowing circumstances of every kind, becoming one link among countless causes — yet you cannot control the final outcome.**
 
-All rise and fall, destruction and transcendence, emerge from the convergence of infinite causes and conditions. Every destiny unfolds according to karma, not by command.
+Every ending arises from the convergence of innumerable conditions. Each being carries its own karmic inclination; the player is merely one external condition among many — you may create peril or create an environment of peace, yet you cannot command karma, cannot grant liberation on another's behalf, and cannot appoint who attains ascension. Awakening can only arise from the transformation of a being's own mind; every destiny unfolds as conditions converge.
 
 No in-game text or narration is presented. Following the Zen principle of "no establishment of words", all truth is perceived through observation and intuition alone.
 
@@ -99,6 +77,14 @@ No in-game text or narration is presented. Following the Zen principle of "no es
 ### Local Quick Start (Zero Configuration)
 
 This is a pure static single-file web project with no backend, dependencies, or compilation required. After downloading all project files, simply double-click the `index.html` file in the root directory to launch the game directly in your default browser. All mainstream browsers are supported.
+
+You can also serve the project locally with Python. Run this from the project root:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000` to play, and press `Ctrl+C` to stop the server. Other devices on the same local network can access it via `http://<your-local-ip>:8000`.
 
 ### GitHub Pages Deployment
 
