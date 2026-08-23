@@ -2186,6 +2186,7 @@ class FireWheel {
     this.wanderPause = 0;
     this.absorbedCount = 0;
     this.flameParticles = [];
+    this._cleansingTimer = 0;
     this.autoSpawnTimer = CONFIG.fireWheel.autoSpawnInterval;
     this.maxRadius = 734; // set dynamically in update
   }
@@ -2198,6 +2199,37 @@ class FireWheel {
     this.state = "spawning";
     this.absorbedCount = 0;
     this.flameParticles = [];
+    this._cleansingTimer = 0;
+  }
+
+  touchesRestoration(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const samples = Math.max(16, Math.ceil(this.radius / cs) * 2);
+    for (let sample = 0; sample < samples; sample++) {
+      const angle = sample / samples * Math.PI * 2;
+      const x = Math.floor((this.x + Math.cos(angle) * this.radius) / cs);
+      const y = Math.floor((this.y + Math.sin(angle) * this.radius) / cs);
+      const particle = engine.get(x, y);
+      if (particle === P.WATER || particle === P.PLANT) return true;
+    }
+    return false;
+  }
+
+  releaseSoul(figures) {
+    const captured = figures.filter(fig => fig.captured && fig.capturedBy === this);
+    if (!captured.length) return;
+    const fig = captured[rand(captured.length)];
+    const angle = fig.captureAngle;
+    const releaseRadius = this.radius + CONFIG.grid.cellSize * 3;
+    fig.captured = false;
+    fig.capturedBy = null;
+    fig.beingPulled = false;
+    fig.pullAmount = 0;
+    fig.x = this.x + Math.cos(angle) * releaseRadius;
+    fig.y = this.y + Math.sin(angle) * releaseRadius;
+    fig.vx = Math.cos(angle) * CONFIG.stickFigures.fleeSpeed;
+    fig.vy = -1.5;
+    fig.state = STATES.FLEE;
   }
 
   combinedCoverage(engine, wheels) {
@@ -2281,7 +2313,16 @@ class FireWheel {
 
     // Active: endless growth + capture (figures orbit, do NOT die)
     if (this.state === "active") {
-      this.targetRadius = Math.min(this.maxRadius, this.targetRadius + 0.08);
+      if (this.touchesRestoration(engine)) {
+        this.targetRadius = Math.max(CONFIG.fireWheel.initialRadius, this.targetRadius - 0.3);
+        if (++this._cleansingTimer >= 45) {
+          this._cleansingTimer = 0;
+          this.releaseSoul(figures);
+        }
+      } else {
+        this._cleansingTimer = 0;
+        this.targetRadius = Math.min(this.maxRadius, this.targetRadius + 0.08);
+      }
       this.radius = lerp(this.radius, this.targetRadius, 0.03);
 
       const detectR = this.radius + 40;
