@@ -1,0 +1,2594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SandSamsara 沙之轮回</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #ccc;
+    user-select: none;
+  }
+  #gameWrap {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #gameCanvas {
+    background: #1a1a1a;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: crosshair;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  }
+  #uiOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+    padding: 8px;
+  }
+  .toolbar {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    justify-content: center; align-items: center;
+    pointer-events: auto;
+    max-width: 96vw;
+  }
+  .btn {
+    padding: 6px 10px;
+    background: rgba(26,26,26,0.85);
+    border: 1px solid #555;
+    color: #ccc;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+  .btn:hover { background: rgba(60,60,60,0.9); border-color: #C9B896; color: #fff; }
+  .btn.active { background: rgba(201,184,150,0.2); border-color: #C9B896; color: #C9B896; font-weight: bold; }
+  .btn.action { border-color: #8B4513; color: #d4a574; }
+  .btn.action:hover { border-color: #C9B896; background: rgba(139,69,19,0.3); }
+  .btn-label { font-size: 9px; opacity: 0.7; display: block; }
+  .color-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .slider-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px;
+    background: rgba(26,26,26,0.85);
+    border: 1px solid #555;
+    border-radius: 3px;
+  }
+  .slider-group label { font-size: 11px; color: #ccc; white-space: nowrap; }
+  .slider-group input[type=range] {
+    width: 80px; height: 4px;
+    -webkit-appearance: none; appearance: none;
+    background: #444; border-radius: 2px; outline: none;
+  }
+  .slider-group input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #C9B896; cursor: pointer;
+  }
+  .slider-group input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; border: none;
+    background: #C9B896; cursor: pointer;
+  }
+  .slider-val { font-size: 11px; color: #C9B896; min-width: 16px; text-align: center; }
+  #hud {
+    position: absolute;
+    bottom: 8px; left: 8px;
+    font-size: 10px; color: #666;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.5;
+  }
+  #hud span { color: #C9B896; }
+</style>
+</head>
+<body>
+<div id="gameWrap">
+  <canvas id="gameCanvas" width="1280" height="720"></canvas>
+  <div id="uiOverlay">
+    <div class="toolbar" id="toolbar"></div>
+  </div>
+  <div id="hud"></div>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================
+// 1. CONFIG & CONSTANTS
+// ============================================================
+const CONFIG = {
+  grid: { width: 320, height: 180, cellSize: 4 },
+  stickFigures: {
+    maxCount: 40,
+    spawnInterval: 180,
+    personaWeights: [0.60, 0.25, 0.12, 0.03],
+    baseSpeed: 0.3,
+    walkSpeed: 0.4,
+    fleeSpeed: 0.6,
+    climbSpeed: 0.2,
+    turnDelayMin: 60,
+    turnDelayMax: 120,
+    dragLerp: 0.2,
+    dragStun: 30,
+    liberationChance: 0.0001,
+    maxLiberationsPerCycle: 2,
+    liberationIdleFrames: 600,
+    liberationSafeFrames: 300,
+  },
+  fireWheel: {
+    initialRadius: 40,
+    maxRadius: 200,
+    growthPerAbsorb: 2,
+    autoSpawnInterval: 12000,
+    wanderSpeed: 1.5,
+    dragLerp: 0.15,
+    criticalMassFigures: 5,
+    edgeFireThreshold: 120,
+  },
+  explosion: {
+    shockwaveSpeed: 12,
+    destructionRate: 0.8,
+    phases: { implosion: 30, blast: 60, settle: 120, rebirth: 180 },
+  },
+  plant: {
+    growthInterval: 300,
+    branchChance: 0.10,
+    maxHeight: 30,
+    maxWidth: 15,
+    burnTime: 180,
+  },
+};
+
+const P = { EMPTY:0, SAND:1, WATER:2, FIRE:3, MAGMA:4, OIL:5, STONE:6, GUNPOWDER:7, ASH:8, PLANT:9 };
+
+const PARTICLE_INFO = [
+  { name:"Empty",   cn:"空",   color:null },
+  { name:"Sand",    cn:"沙",   color:"#C9B896" },
+  { name:"Water",   cn:"水",   color:"#4A90D9" },
+  { name:"Fire",    cn:"火",   color:"#FF4500" },
+  { name:"Magma",   cn:"岩浆", color:"#FF6600" },
+  { name:"Oil",     cn:"油",   color:"#3D3D3D" },
+  { name:"Stone",   cn:"石",   color:"#555555" },
+  { name:"Gunpowder", cn:"火药", color:"#2A2A2A" },
+  { name:"Ash",     cn:"灰",   color:"#3A3A3A" },
+  { name:"Plant",   cn:"植物", color:"#2D5A2D" },
+];
+
+// Color variants for visual richness [r,g,b]
+const COLOR_VARIANTS = {
+  [P.SAND]:    [[201,184,150],[184,160,136],[166,142,122],[210,195,165]],
+  [P.WATER]:   [[74,144,217],[58,123,200],[45,90,138],[90,160,230]],
+  [P.FIRE]:    [[255,69,0],[255,102,0],[255,153,0],[255,204,0],[255,51,0]],
+  [P.MAGMA]:   [[255,102,0],[204,51,0],[255,68,0],[255,140,0]],
+  [P.OIL]:     [[61,61,61],[45,45,45],[26,26,26],[75,70,60]],
+  [P.STONE]:   [[85,85,85],[68,68,68],[102,102,102],[75,75,75]],
+  [P.GUNPOWDER]:[[42,42,42],[37,37,37],[50,45,40],[30,30,30]],
+  [P.ASH]:     [[58,58,58],[42,42,42],[74,74,74],[50,50,50]],
+  [P.PLANT]:   [[45,90,45],[58,122,58],[74,154,74],[35,70,35]],
+};
+
+const STATES = {
+  IDLE:0, WALK:1, FLEE:2, STRUGGLE:3, BURIED:4,
+  DROWNING:5, BURNING:6, STUNNED:7, ASCENDING:8, DRAGGED:9, CLIMB:10
+};
+
+const PERSONAS = { APATHETIC:0, RESTLESS:1, SURVIVOR:2, SEEKER:3 };
+
+// ============================================================
+// 2. UTILITY
+// ============================================================
+function rand(n) { return Math.floor(Math.random() * n); }
+function randRange(a,b) { return a + Math.random() * (b-a); }
+function chance(p) { return Math.random() < p; }
+function clamp(v,lo,hi) { return v < lo ? lo : (v > hi ? hi : v); }
+function lerp(a,b,t) { return a + (b-a)*t; }
+function dist2(ax,ay,bx,by) { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+
+// ============================================================
+// 3. PARTICLE ENGINE
+// ============================================================
+class ParticleEngine {
+  constructor(w, h) {
+    this.w = w; this.h = h;
+    this.size = w * h;
+    this.grid = new Uint8Array(this.size);
+    this.life = new Uint8Array(this.size);   // lifetime / timer
+    this.temp = new Uint8Array(this.size);   // temperature 0-255
+    this.updated = new Uint8Array(this.size);
+    this.frame = 0;
+    this.scanDir = 1; // 1 = L->R, -1 = R->L
+    this._imgData = null; // cached in render()
+  }
+
+  idx(x, y) { return y * this.w + x; }
+  inBounds(x, y) { return x >= 0 && x < this.w && y >= 0 && y < this.h; }
+  get(x, y) { return this.inBounds(x,y) ? this.grid[this.idx(x,y)] : P.STONE; }
+  set(x, y, t) { if (this.inBounds(x,y)) { const i=this.idx(x,y); this.grid[i]=t; this.life[i]=0; this.temp[i]=0; } }
+
+  clear() {
+    this.grid.fill(0); this.life.fill(0); this.temp.fill(0);
+  }
+
+  // Swap contents of two cells (including metadata)
+  swap(i, j) {
+    const t = this.grid[i]; this.grid[i] = this.grid[j]; this.grid[j] = t;
+    const l = this.life[i];  this.life[i] = this.life[j];  this.life[j] = l;
+    const tp = this.temp[i]; this.temp[i] = this.temp[j]; this.temp[j] = tp;
+    this.updated[j] = 1;
+  }
+
+  // Move particle from i to empty j
+  moveTo(i, j) {
+    this.grid[j] = this.grid[i]; this.life[j] = this.life[i]; this.temp[j] = this.temp[i];
+    this.grid[i] = P.EMPTY; this.life[i] = 0; this.temp[i] = 0;
+    this.updated[j] = 1;
+  }
+
+  // Set cell to type with life
+  setCell(i, t, life=0, temp=0) {
+    this.grid[i] = t; this.life[i] = life; this.temp[i] = temp; this.updated[i] = 1;
+  }
+
+  isLiquid(t) { return t === P.WATER || t === P.OIL; }
+  isSolid(t) { return t === P.SAND || t === P.STONE || t === P.GUNPOWDER || t === P.ASH || t === P.MAGMA || t === P.PLANT; }
+  isFlammable(t) { return t === P.OIL || t === P.GUNPOWDER || t === P.PLANT; }
+
+  // Explosion at grid coords with radius
+  explode(cx, cy, radius) {
+    const r2 = radius * radius;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx*dx + dy*dy > r2) continue;
+        const x = cx + dx, y = cy + dy;
+        if (!this.inBounds(x,y)) continue;
+        const i = this.idx(x,y);
+        const t = this.grid[i];
+        if (t === P.EMPTY) {
+          if (chance(0.3)) this.setCell(i, P.FIRE, 40+rand(40), 200);
+        } else if (t === P.GUNPOWDER) {
+          // chain reaction - delayed
+          this.setCell(i, P.FIRE, 60, 255);
+        } else if (t === P.OIL) {
+          this.setCell(i, P.FIRE, 80+rand(60), 255);
+        } else if (t === P.STONE) {
+          if (chance(0.4)) this.setCell(i, P.SAND, 0, 0);
+          else if (chance(0.3)) this.setCell(i, P.EMPTY);
+        } else if (t === P.PLANT) {
+          this.setCell(i, P.FIRE, 60, 200);
+        } else {
+          // sand, ash, water, magma - scatter or destroy
+          if (chance(0.6)) this.setCell(i, P.EMPTY);
+          else if (chance(0.3)) this.setCell(i, P.ASH);
+        }
+      }
+    }
+    // fire ring
+    for (let a = 0; a < 16; a++) {
+      const ang = (a / 16) * Math.PI * 2;
+      const x = cx + Math.round(Math.cos(ang) * radius);
+      const y = cy + Math.round(Math.sin(ang) * radius);
+      if (this.inBounds(x,y) && this.get(x,y) === P.EMPTY) {
+        this.setCell(this.idx(x,y), P.FIRE, 50+rand(30), 200);
+      }
+    }
+  }
+
+  update() {
+    this.frame++;
+    this.updated.fill(0);
+    this.scanDir = this.frame % 2 === 0 ? 1 : -1;
+
+    for (let y = this.h - 1; y >= 0; y--) {
+      if (this.scanDir === 1) {
+        for (let x = 0; x < this.w; x++) this.updateCell(x, y);
+      } else {
+        for (let x = this.w - 1; x >= 0; x--) this.updateCell(x, y);
+      }
+    }
+  }
+
+  updateCell(x, y) {
+    const i = this.idx(x, y);
+    if (this.updated[i]) return;
+    const t = this.grid[i];
+    if (t === P.EMPTY) return;
+
+    switch (t) {
+      case P.SAND: this.updateSand(x, y, i); break;
+      case P.WATER: this.updateWater(x, y, i); break;
+      case P.FIRE: this.updateFire(x, y, i); break;
+      case P.MAGMA: this.updateMagma(x, y, i); break;
+      case P.OIL: this.updateOil(x, y, i); break;
+      case P.STONE: this.updateStone(x, y, i); break;
+      case P.GUNPOWDER: this.updateGunpowder(x, y, i); break;
+      case P.ASH: this.updateAsh(x, y, i); break;
+      case P.PLANT: this.updatePlant(x, y, i); break;
+    }
+  }
+
+  // --- SAND ---
+  updateSand(x, y, i) {
+    // heat check - hot sand fuses to stone
+    if (this.temp[i] > 150 && chance(0.02)) {
+      this.setCell(i, P.STONE, 0, 0);
+      return;
+    }
+    const below = this.idx(x, y+1);
+    if (y+1 < this.h && this.grid[below] === P.EMPTY) {
+      this.moveTo(i, below); return;
+    }
+    // diagonal
+    const dir = this.scanDir;
+    const d1x = x + dir, d2x = x - dir;
+    if (y+1 < this.h) {
+      if (this.inBounds(d1x,y+1) && this.grid[this.idx(d1x,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(d1x,y+1)); return;
+      }
+      if (this.inBounds(d2x,y+1) && this.grid[this.idx(d2x,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(d2x,y+1)); return;
+      }
+      // displace water/oil
+      if (this.inBounds(d1x,y+1) && this.isLiquid(this.grid[this.idx(d1x,y+1)])) {
+        this.swap(i, this.idx(d1x,y+1)); return;
+      }
+      if (this.inBounds(d2x,y+1) && this.isLiquid(this.grid[this.idx(d2x,y+1)])) {
+        this.swap(i, this.idx(d2x,y+1)); return;
+      }
+      if (this.grid[below] !== P.EMPTY && this.isLiquid(this.grid[below])) {
+        this.swap(i, below); return;
+      }
+    }
+  }
+
+  // --- WATER ---
+  updateWater(x, y, i) {
+    // reactions with neighbors
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (!this.inBounds(nx,ny)) continue;
+      const ni = this.idx(nx,ny);
+      const nt = this.grid[ni];
+      if (nt === P.FIRE) {
+        // steam: remove water, weaken fire
+        this.grid[i] = P.EMPTY; this.life[i]=0;
+        if (this.life[ni] > 10) this.life[ni] = Math.floor(this.life[ni] * 0.5);
+        else this.grid[ni] = P.EMPTY;
+        return;
+      }
+      if (nt === P.MAGMA) {
+        // water evaporates to steam, magma cools but stays magma
+        this.grid[i] = P.EMPTY;
+        this.temp[ni] = Math.max(0, this.temp[ni] - 80);
+        for (const [sx,sy] of [[x-1,y],[x+1,y],[x,y-1]]) {
+          if (this.inBounds(sx,sy) && this.grid[this.idx(sx,sy)] === P.EMPTY && chance(0.6)) {
+            this.setCell(this.idx(sx,sy), P.FIRE, 15, 100);
+          }
+        }
+        return;
+      }
+    }
+    // movement — fall first
+    const below = this.idx(x, y+1);
+    if (y+1 < this.h && this.grid[below] === P.EMPTY) {
+      this.moveTo(i, below); return;
+    }
+    const dir = this.scanDir;
+    // down-diagonal
+    if (y+1 < this.h) {
+      const dx1 = x + dir;
+      if (this.inBounds(dx1,y+1) && this.grid[this.idx(dx1,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(dx1,y+1)); return;
+      }
+      const dx2 = x - dir;
+      if (this.inBounds(dx2,y+1) && this.grid[this.idx(dx2,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(dx2,y+1)); return;
+      }
+    }
+    // horizontal flow: seek a drop (cell with empty below), range 6
+    const range = 6;
+    for (const d of [dir, -dir]) {
+      for (let step = 1; step <= range; step++) {
+        const nx = x + d * step;
+        if (!this.inBounds(nx,y)) break;
+        const ni = this.idx(nx,y);
+        if (this.grid[ni] !== P.EMPTY) break;
+        // found a drop — flow there immediately
+        if (y+1 < this.h && this.grid[this.idx(nx,y+1)] === P.EMPTY) {
+          this.moveTo(i, ni); return;
+        }
+      }
+    }
+    // no drop: flow to farthest empty cell in scan direction
+    for (let step = 1; step <= range; step++) {
+      const nx = x + dir * step;
+      if (!this.inBounds(nx,y)) break;
+      const ni = this.idx(nx,y);
+      if (this.grid[ni] !== P.EMPTY) break;
+      if (step === range || !this.inBounds(nx+dir,y) || this.grid[this.idx(nx+dir,y)] !== P.EMPTY) {
+        this.moveTo(i, ni); return;
+      }
+    }
+    for (let step = 1; step <= range; step++) {
+      const nx = x - dir * step;
+      if (!this.inBounds(nx,y)) break;
+      const ni = this.idx(nx,y);
+      if (this.grid[ni] !== P.EMPTY) break;
+      if (step === range || !this.inBounds(nx-dir,y) || this.grid[this.idx(nx-dir,y)] !== P.EMPTY) {
+        this.moveTo(i, ni); return;
+      }
+    }
+  }
+
+  // --- FIRE ---
+  updateFire(x, y, i) {
+    // lifetime
+    this.life[i]++;
+    if (this.life[i] > 60 + rand(60)) {
+      if (chance(0.7)) this.grid[i] = P.EMPTY;
+      else this.setCell(i, P.ASH);
+      return;
+    }
+    // spread to flammable neighbors
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y],[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]]) {
+      if (!this.inBounds(nx,ny)) continue;
+      const ni = this.idx(nx,ny);
+      const nt = this.grid[ni];
+      if (nt === P.OIL && chance(0.4)) {
+        this.setCell(ni, P.FIRE, 100+rand(100), 255);
+      } else if (nt === P.GUNPOWDER) {
+        this.explode(nx, ny, 4);
+        return;
+      } else if (nt === P.PLANT && chance(0.15)) {
+        this.setCell(ni, P.FIRE, 80+rand(60), 200);
+      } else if (nt === P.WATER && chance(0.3)) {
+        this.grid[ni] = P.EMPTY;
+        this.life[i] += 20;
+      }
+    }
+    // heat neighbors
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (this.inBounds(nx,ny)) {
+        const ni = this.idx(nx,ny);
+        if (this.temp[ni] < 200) this.temp[ni] = Math.min(255, this.temp[ni] + 5);
+      }
+    }
+    // buoyancy: only rise after burning for a while, and with reduced chance
+    // (fire stays on ground first, then gradually rises)
+    if (this.life[i] > 20 && y > 0 && chance(0.4)) {
+      const above = this.idx(x, y-1);
+      if (this.grid[above] === P.EMPTY) {
+        this.moveTo(i, above); return;
+      }
+      const dir = this.scanDir;
+      const d1x = x + dir;
+      if (this.inBounds(d1x,y-1) && this.grid[this.idx(d1x,y-1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(d1x,y-1)); return;
+      }
+      const d2x = x - dir;
+      if (this.inBounds(d2x,y-1) && this.grid[this.idx(d2x,y-1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(d2x,y-1)); return;
+      }
+    }
+  }
+
+  // --- MAGMA ---
+  updateMagma(x, y, i) {
+    // cool down (temp only affects stone-melting ability; magma never solidifies)
+    this.temp[i] = Math.max(0, this.temp[i] - 1);
+    // reactions
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (!this.inBounds(nx,ny)) continue;
+      const ni = this.idx(nx,ny);
+      const nt = this.grid[ni];
+      if (nt === P.WATER) {
+        // water evaporates to steam, magma cools but stays magma
+        this.grid[ni] = P.EMPTY;
+        this.temp[i] = Math.max(0, this.temp[i] - 80);
+        for (const [sx,sy] of [[x-1,y-1],[x+1,y-1],[x,y-2]]) {
+          if (this.inBounds(sx,sy) && this.grid[this.idx(sx,sy)] === P.EMPTY && chance(0.6))
+            this.setCell(this.idx(sx,sy), P.FIRE, 15, 100);
+        }
+        return;
+      }
+      if (nt === P.OIL && chance(0.5)) { this.setCell(ni, P.FIRE, 120, 255); }
+      if (nt === P.GUNPOWDER) { this.explode(nx, ny, 4); return; }
+      if (nt === P.PLANT && chance(0.3)) { this.setCell(ni, P.FIRE, 80, 200); }
+      if (nt === P.STONE && this.temp[i] > 220 && chance(0.008)) { this.setCell(ni, P.MAGMA, 0, 255); }
+    }
+    // move like sand
+    const below = this.idx(x, y+1);
+    if (y+1 < this.h && this.grid[below] === P.EMPTY) { this.moveTo(i, below); return; }
+    const dir = this.scanDir;
+    if (y+1 < this.h) {
+      if (this.inBounds(x+dir,y+1) && this.grid[this.idx(x+dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x+dir,y+1)); return;
+      }
+      if (this.inBounds(x-dir,y+1) && this.grid[this.idx(x-dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x-dir,y+1)); return;
+      }
+    }
+  }
+
+  // --- OIL ---
+  updateOil(x, y, i) {
+    // check ignition
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (this.inBounds(nx,ny)) {
+        const ni = this.idx(nx,ny);
+        if (this.grid[ni] === P.FIRE || this.grid[ni] === P.MAGMA || this.temp[ni] > 150) {
+          this.setCell(i, P.FIRE, 120+rand(100), 255); return;
+        }
+      }
+    }
+    // float on water: if below is water, try to move sideways/up
+    const below = y+1 < this.h ? this.grid[this.idx(x,y+1)] : P.STONE;
+    if (below === P.WATER) {
+      // try move up
+      if (y > 0 && this.grid[this.idx(x,y-1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x,y-1)); return;
+      }
+      const dir = this.scanDir;
+      for (const dx of [dir, -dir]) {
+        if (this.inBounds(x+dx,y) && this.grid[this.idx(x+dx,y)] === P.EMPTY) {
+          this.moveTo(i, this.idx(x+dx,y)); return;
+        }
+      }
+    }
+    // flow like water but slower (max 2 horizontal)
+    if (y+1 < this.h && below === P.EMPTY) { this.moveTo(i, this.idx(x,y+1)); return; }
+    const dir = this.scanDir;
+    if (y+1 < this.h) {
+      if (this.inBounds(x+dir,y+1) && this.grid[this.idx(x+dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x+dir,y+1)); return;
+      }
+      if (this.inBounds(x-dir,y+1) && this.grid[this.idx(x-dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x-dir,y+1)); return;
+      }
+    }
+    for (let step = 1; step <= 2; step++) {
+      const nx = x + dir * step;
+      if (!this.inBounds(nx,y)) break;
+      const ni = this.idx(nx,y);
+      if (this.grid[ni] === P.EMPTY) { this.moveTo(i, ni); return; }
+      else break;
+    }
+    for (let step = 1; step <= 2; step++) {
+      const nx = x - dir * step;
+      if (!this.inBounds(nx,y)) break;
+      const ni = this.idx(nx,y);
+      if (this.grid[ni] === P.EMPTY) { this.moveTo(i, ni); return; }
+      else break;
+    }
+  }
+
+  // --- STONE ---
+  updateStone(x, y, i) {
+    // melt from magma contact — only if magma is extremely hot
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (this.inBounds(nx,ny)) {
+        const ni = this.idx(nx,ny);
+        if (this.grid[ni] === P.MAGMA && this.temp[ni] > 220 && chance(0.005)) {
+          this.setCell(i, P.MAGMA, 0, 255); return;
+        }
+      }
+    }
+    // static
+  }
+
+  // --- GUNPOWDER ---
+  updateGunpowder(x, y, i) {
+    // wet check
+    if (this.life[i] > 0) {
+      this.life[i]--;
+      if (this.life[i] === 0) { /* dried */ }
+    }
+    // ignition
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (this.inBounds(nx,ny)) {
+        const ni = this.idx(nx,ny);
+        if (this.grid[ni] === P.FIRE || this.grid[ni] === P.MAGMA || this.temp[ni] > 150) {
+          if (this.life[i] === 0) { this.explode(x, y, 4); return; }
+        }
+        if (this.grid[ni] === P.WATER && this.life[i] === 0) {
+          this.life[i] = 200; // wetted
+        }
+      }
+    }
+    // fall like sand
+    const below = this.idx(x, y+1);
+    if (y+1 < this.h && this.grid[below] === P.EMPTY) { this.moveTo(i, below); return; }
+    const dir = this.scanDir;
+    if (y+1 < this.h) {
+      if (this.inBounds(x+dir,y+1) && this.grid[this.idx(x+dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x+dir,y+1)); return;
+      }
+      if (this.inBounds(x-dir,y+1) && this.grid[this.idx(x-dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x-dir,y+1)); return;
+      }
+    }
+  }
+
+  // --- ASH ---
+  updateAsh(x, y, i) {
+    // floaty fall - only every other frame
+    if (this.frame % 2 !== 0) return;
+    const below = this.idx(x, y+1);
+    if (y+1 < this.h && this.grid[below] === P.EMPTY) { this.moveTo(i, below); return; }
+    // random horizontal drift
+    if (chance(0.3)) {
+      const dx = chance(0.5) ? 1 : -1;
+      if (this.inBounds(x+dx,y) && this.grid[this.idx(x+dx,y)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x+dx,y)); return;
+      }
+    }
+    if (y+1 < this.h) {
+      const dir = this.scanDir;
+      if (this.inBounds(x+dir,y+1) && this.grid[this.idx(x+dir,y+1)] === P.EMPTY) {
+        this.moveTo(i, this.idx(x+dir,y+1)); return;
+      }
+    }
+  }
+
+  // --- PLANT ---
+  updatePlant(x, y, i) {
+    // burn check
+    for (const [nx,ny] of [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]) {
+      if (this.inBounds(nx,ny)) {
+        const ni = this.idx(nx,ny);
+        if (this.grid[ni] === P.FIRE || this.grid[ni] === P.MAGMA) {
+          this.setCell(i, P.FIRE, 80+rand(60), 200); return;
+        }
+      }
+    }
+    // growth timer
+    this.life[i]++;
+    let interval = CONFIG.plant.growthInterval;
+    // water nearby accelerates
+    for (const [nx,ny] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1],[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]]) {
+      if (this.inBounds(nx,ny) && this.grid[this.idx(nx,ny)] === P.WATER) {
+        interval = Math.floor(interval / 2); break;
+      }
+    }
+    // only grow if below max height (temp stores height from base)
+    if (this.life[i] >= interval && this.temp[i] < CONFIG.plant.maxHeight) {
+      this.life[i] = 0;
+      const newHeight = this.temp[i] + 1;
+      // grow upward
+      if (y > 0 && this.grid[this.idx(x,y-1)] === P.EMPTY) {
+        this.setCell(this.idx(x,y-1), P.PLANT, 0, newHeight);
+        // branching
+        if (chance(CONFIG.plant.branchChance)) {
+          const bx = x + (chance(0.5) ? 1 : -1);
+          if (this.inBounds(bx,y-1) && this.grid[this.idx(bx,y-1)] === P.EMPTY) {
+            this.setCell(this.idx(bx,y-1), P.PLANT, 0, newHeight);
+          }
+        }
+      }
+    }
+  }
+
+  // Render particles to offscreen canvas context (1:1 pixel)
+  render(ctx) {
+    if (!this._imgData) this._imgData = ctx.createImageData(this.w, this.h);
+    const data = this._imgData.data;
+    // zero out alpha (and RGB) for all cells first
+    data.fill(0);
+    for (let i = 0; i < this.size; i++) {
+      const t = this.grid[i];
+      if (t === P.EMPTY) continue;
+      const variants = COLOR_VARIANTS[t];
+      if (!variants) continue;
+      // integer hash to avoid regular striping from i % n
+      const vi = ((i * 2654435761) >>> 0) % variants.length;
+      const v = variants[vi];
+      const off = i * 4;
+      if (t === P.FIRE) {
+        const flick = 0.7 + Math.random() * 0.3;
+        data[off]   = Math.min(255, v[0] * flick);
+        data[off+1] = Math.min(255, v[1] * flick);
+        data[off+2] = Math.min(255, v[2] * flick);
+      } else if (t === P.MAGMA) {
+        const glow = 0.8 + Math.random() * 0.2;
+        data[off]   = Math.min(255, v[0] * glow);
+        data[off+1] = v[1] * glow;
+        data[off+2] = v[2] * glow;
+      } else {
+        data[off]   = v[0];
+        data[off+1] = v[1];
+        data[off+2] = v[2];
+      }
+      data[off+3] = 255;
+    }
+    ctx.putImageData(this._imgData, 0, 0);
+  }
+}
+
+// ============================================================
+// 4. STICK FIGURE
+// ============================================================
+class StickFigure {
+  constructor(x, y, persona) {
+    this.x = x; this.y = y;       // pixel position, center of figure
+    this.vx = 0; this.vy = 0;
+    this.persona = persona;
+    this.state = STATES.IDLE;
+    this.health = 100;
+    this.direction = chance(0.5) ? 1 : -1;
+    this.animTimer = 0;
+    this.animFrame = 0;
+    this.turnTimer = rand(60) + 30;
+    this.idleTimer = 0;
+    this.safeTimer = 0;
+    this.stunTimer = 0;
+    this.burnTimer = 0;
+    this.fearLevel = 0;
+    this.isDragged = false;
+    this.dragOffX = 0; this.dragOffY = 0;
+    // capture by fire wheel
+    this.beingPulled = false;
+    this.pullX = 0; this.pullY = 0;
+    this.pullAmount = 0;
+    this.captured = false;
+    this.captureAngle = 0;
+    this.captureRadius = 0;
+    this.captureSpeed = 0.03;
+    // liberation
+    this.isLiberating = false;
+    this.libStage = 0;
+    this.libTimer = 0;
+    this.liberated = false;
+    this.happy = false;
+    this.oasisTarget = null;
+    this._oasisTimer = 0;
+    // body dimensions in pixels
+    this.bodyW = 10;
+    this.bodyH = 22;
+    this.dead = false;
+  }
+
+  get gridX() { return Math.floor(this.x / CONFIG.grid.cellSize); }
+  get gridY() { return Math.floor(this.y / CONFIG.grid.cellSize); }
+
+  // Sample environment around figure
+  sampleEnvironment(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const gy = Math.floor(this.y / cs);
+    let solidCount = 0, liquidCount = 0, fireContact = false, magmaContact = false;
+    let plantContact = false, totalCells = 0;
+    // sample 3 wide x 5 tall area around figure center
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const cx = gx + dx, cy = gy + dy;
+        if (!engine.inBounds(cx, cy)) continue;
+        totalCells++;
+        const t = engine.get(cx, cy);
+        if (t === P.SAND || t === P.STONE || t === P.GUNPOWDER || t === P.ASH) solidCount++;
+        else if (t === P.WATER || t === P.OIL) liquidCount++;
+        else if (t === P.FIRE) fireContact = true;
+        else if (t === P.MAGMA) magmaContact = true;
+        else if (t === P.PLANT) plantContact = true;
+      }
+    }
+    return {
+      solidRatio: totalCells > 0 ? solidCount / totalCells : 0,
+      liquidRatio: totalCells > 0 ? liquidCount / totalCells : 0,
+      fireContact, magmaContact, plantContact,
+    };
+  }
+
+  // Check if feet are on solid ground
+  onGround(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const footY = Math.floor((this.y + this.bodyH/2) / cs);
+    for (const dx of [-1, 0, 1]) {
+      const t = engine.get(gx + dx, footY);
+      if (engine.isSolid(t) || t === P.MAGMA) return true;
+    }
+    return false;
+  }
+
+  // Can move to this pixel position? (check head/torso collision)
+  canMoveTo(engine, nx, ny) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(nx / cs);
+    const gy = Math.floor(ny / cs);
+    for (let dy = -2; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const t = engine.get(gx+dx, gy+dy);
+        if (t === P.STONE || t === P.MAGMA) return false;
+      }
+    }
+    return true;
+  }
+
+  // Scan wide area for fire/magma/wheel threats; returns nearest threat or null
+  detectThreat(engine, wheels) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const gy = Math.floor(this.y / cs);
+    const range = 10; // cells — can see danger from far away
+    let nearest = null;
+    let nearestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
+        const cx = gx+dx, cy = gy+dy;
+        if (!engine.inBounds(cx, cy)) continue;
+        const t = engine.get(cx, cy);
+        if (t === P.FIRE || t === P.MAGMA) {
+          const d = dx*dx + dy*dy;
+          if (d < nearestD) { nearestD = d; nearest = { x: cx, y: cy, type: t }; }
+        }
+      }
+    }
+    // fire wheels are major threats — flee from well beyond their edge
+    for (const wheel of wheels) {
+      if (!wheel.active) continue;
+      const wd = Math.sqrt(dist2(this.x, this.y, wheel.x, wheel.y));
+      if (wd < wheel.radius + 220) {
+        const wx = Math.floor(wheel.x / cs);
+        const wy = Math.floor(wheel.y / cs);
+        const wd2 = (wx-gx)*(wx-gx) + (wy-gy)*(wy-gy);
+        if (wd2 < nearestD) { nearest = { x: wx, y: wy, type: -1 }; nearestD = wd2; }
+      }
+    }
+    this._threat = nearest;
+    return nearest !== null;
+  }
+
+  // Scan for nearby plants (oasis); returns nearest plant cell or null
+  detectOasis(engine) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const gy = Math.floor(this.y / cs);
+    const range = 18; // cells — can see oasis from fairly far
+    let nearest = null;
+    let nearestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
+        const cx = gx+dx, cy = gy+dy;
+        if (!engine.inBounds(cx, cy)) continue;
+        if (engine.get(cx, cy) === P.PLANT) {
+          const d = dx*dx + dy*dy;
+          if (d < nearestD) { nearestD = d; nearest = { x: cx, y: cy }; }
+        }
+      }
+    }
+    this.oasisTarget = nearest;
+    return nearest !== null;
+  }
+
+  // Check if near water surface (happy) vs submerged (drowning)
+  checkWaterMood(engine, env) {
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(this.x / cs);
+    const gy = Math.floor(this.y / cs);
+    // water at feet level but not submerging
+    let nearWater = false;
+    for (let dy = -1; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (engine.inBounds(gx+dx, gy+dy) && engine.get(gx+dx, gy+dy) === P.WATER) {
+          nearWater = true;
+        }
+      }
+    }
+    // happy if near water but not drowning (liquidRatio low)
+    return nearWater && env.liquidRatio < 0.4;
+  }
+
+  // Move away from nearest detected threat — panicked
+  fleeFromThreat(engine) {
+    const C = CONFIG.stickFigures;
+    if (this._threat) {
+      const cs = CONFIG.grid.cellSize;
+      const tx = this._threat.x * cs + cs/2;
+      const ty = this._threat.y * cs + cs/2;
+      const dx = this.x - tx;
+      // prefer horizontal flee; if threat is directly above/below, pick horizontal
+      if (Math.abs(dx) > 4) {
+        this.direction = dx > 0 ? 1 : -1;
+      } else {
+        this.direction = chance(0.5) ? 1 : -1;
+      }
+      // panic: occasional random direction switch
+      if (chance(0.08)) this.direction *= -1;
+      this.vx = this.direction * C.fleeSpeed * 1.2;
+      // panicked jumping when blocked
+      if (!this.canMoveTo(engine, this.x + this.vx, this.y) && this.onGround(engine)) {
+        this.vy = -2.5;
+      } else if (chance(0.04) && this.onGround(engine)) {
+        this.vy = -1.5; // random panic hop
+      }
+    } else {
+      this.vx = this.direction * C.fleeSpeed;
+    }
+    this.state = STATES.FLEE;
+  }
+
+  update(engine, wheels, samsara) {
+    const C = CONFIG.stickFigures;
+    if (this.dead) return;
+    if (this.isLiberating) { this.updateLiberation(engine); return; }
+    if (this.captured) {
+      // position is controlled by fire wheel; just animate
+      this.animTimer++;
+      this.pullAmount = 1;
+      this.beingPulled = true;
+      return;
+    }
+
+    // decay pull if wheel didn't refresh it this frame
+    if (!this.beingPulled) this.pullAmount = Math.max(0, this.pullAmount - 0.08);
+    this.beingPulled = false;
+
+    this.animTimer++;
+    if (this.animTimer >= 30) { this.animTimer = 0; this.animFrame = (this.animFrame + 1) % 2; }
+
+    // Mouse drag overrides everything
+    if (this.isDragged) {
+      this.state = STATES.DRAGGED;
+      return;
+    }
+
+    // Stun recovery
+    if (this.stunTimer > 0) {
+      this.stunTimer--;
+      this.state = STATES.STUNNED;
+      this.applyGravity(engine);
+      return;
+    }
+
+    const env = this.sampleEnvironment(engine);
+
+    // Magma contact = instant death
+    if (env.magmaContact) {
+      this.die(engine);
+      return;
+    }
+
+    // Fire contact = lethal burning
+    if (env.fireContact) {
+      this.state = STATES.BURNING;
+      this.burnTimer = 60;
+      this.health -= 10;
+      this.fleeFromThreat(engine);
+      this.fearLevel = 1;
+      if (this.health <= 0) { this.die(engine); return; }
+    } else if (this.state === STATES.BURNING) {
+      this.burnTimer = Math.max(0, this.burnTimer - 2);
+      this.health -= 1;
+      this.fleeFromThreat(engine);
+      if (this.health <= 0) { this.die(engine); return; }
+      if (this.burnTimer <= 0) this.state = STATES.IDLE;
+    }
+
+    // Drowning (liquid)
+    if (env.liquidRatio > 0.5 && this.state !== STATES.BURNING) {
+      this.state = STATES.DROWNING;
+      this.happy = false;
+      this.health -= 0.3;
+      this.vy = -0.2;
+      this.vx *= 0.9;
+      if (this.health <= 0) { this.die(engine); return; }
+    }
+    // Burial (solid)
+    else if (env.solidRatio > 0.7 && this.state !== STATES.BURNING) {
+      this.state = STATES.BURIED;
+      this.happy = false;
+      this.health -= env.solidRatio > 0.9 ? 1 : 0.5;
+      this.vx *= 0.5;
+      if (this.health <= 0) { this.die(engine); return; }
+    }
+    // Normal AI
+    else if (this.state !== STATES.BURNING) {
+      // instinctive threat detection: flee from nearby fire/magma/wheel
+      if (this.detectThreat(engine, wheels)) {
+        this.state = STATES.FLEE;
+        this.happy = false;
+        this.fleeFromThreat(engine);
+      } else {
+        // oasis: walk toward plants (scan every 6 frames to save performance)
+        this._oasisTimer--;
+        if (this._oasisTimer <= 0) {
+          this._oasisTimer = 6;
+          this.detectOasis(engine);
+        }
+        const nearOasis = this.oasisTarget !== null;
+        const nearWaterHappy = this.checkWaterMood(engine, env);
+        this.happy = nearOasis || nearWaterHappy;
+        if (nearOasis && this.oasisTarget) {
+          const cs = CONFIG.grid.cellSize;
+          const ox = this.oasisTarget.x * cs + cs/2;
+          const dx = ox - this.x;
+          // only walk if not already very close
+          if (Math.abs(dx) > cs * 2) {
+            this.state = STATES.WALK;
+            this.direction = dx > 0 ? 1 : -1;
+            this.vx = this.direction * C.walkSpeed * 0.9;
+            // jump over obstacles / into pits to reach oasis
+            if (!this.canMoveTo(engine, this.x + this.vx, this.y) && this.onGround(engine)) {
+              this.vy = -2.8;
+            } else if (chance(0.06) && this.onGround(engine)) {
+              this.vy = -1.8; // occasional hop
+            }
+          } else {
+            // arrived at oasis — idle happily
+            this.state = STATES.IDLE;
+            this.vx = 0;
+          }
+        } else {
+          this.updateAI(engine, env, wheels);
+        }
+      }
+    }
+
+    // Apply movement
+    this.applyMovement(engine);
+
+    // Fear / safety tracking for liberation
+    let nearWheel = false;
+    for (const w of wheels) {
+      if (w.active && dist2(this.x,this.y,w.x,w.y) < 200*200) { nearWheel = true; break; }
+    }
+    if (env.fireContact || env.magmaContact || nearWheel) {
+      this.safeTimer = 0;
+      this.fearLevel = Math.min(1, this.fearLevel + 0.05);
+    } else {
+      this.safeTimer++;
+      this.fearLevel = Math.max(0, this.fearLevel - 0.01);
+    }
+
+    if (this.state === STATES.IDLE) this.idleTimer++;
+    else this.idleTimer = 0;
+
+    // Liberation check
+    if (!this.isLiberating && samsara.liberationCount < CONFIG.stickFigures.maxLiberationsPerCycle) {
+      if (this.idleTimer > CONFIG.stickFigures.liberationIdleFrames &&
+          this.safeTimer > CONFIG.stickFigures.liberationSafeFrames &&
+          chance(CONFIG.stickFigures.liberationChance)) {
+        this.beginLiberation();
+      }
+    }
+  }
+
+  updateAI(engine, env, wheels) {
+    const C = CONFIG.stickFigures;
+
+    // Climb state maintenance
+    if (this.state === STATES.CLIMB) {
+      if (this.onGround(engine) || !env.plantContact || this.y < 30) {
+        this.state = STATES.WALK;
+        this.vy = 0;
+      } else {
+        this.vy = -C.climbSpeed;
+        return;
+      }
+    }
+
+    // Survivor: detect threats (any wheel)
+    if (this.persona === PERSONAS.SURVIVOR) {
+      for (const wheel of wheels) {
+        if (!wheel.active) continue;
+        const d = Math.sqrt(dist2(this.x, this.y, wheel.x, wheel.y));
+        if (d < 150) {
+          this.state = STATES.FLEE;
+          const ang = Math.atan2(this.y - wheel.y, this.x - wheel.x);
+          this.direction = Math.cos(ang) >= 0 ? 1 : -1;
+          this.vx = this.direction * C.fleeSpeed;
+          return;
+        }
+      }
+    }
+
+    // Seeker: walk toward nearest edge
+    if (this.persona === PERSONAS.SEEKER) {
+      this.state = STATES.WALK;
+      const distLeft = this.x;
+      const distRight = (engine.w * CONFIG.grid.cellSize) - this.x;
+      this.direction = distLeft < distRight ? -1 : 1;
+      this.vx = this.direction * C.walkSpeed;
+      return;
+    }
+
+    // Turn timer
+    this.turnTimer--;
+    if (this.turnTimer <= 0) {
+      this.turnTimer = randRange(C.turnDelayMin, C.turnDelayMax);
+      if (this.persona === PERSONAS.APATHETIC) {
+        if (chance(0.8)) { this.state = STATES.IDLE; this.vx = 0; }
+        else { this.direction *= -1; this.state = STATES.WALK; }
+      } else if (this.persona === PERSONAS.RESTLESS) {
+        this.direction *= -1;
+        this.state = STATES.WALK;
+      } else {
+        this.state = chance(0.5) ? STATES.IDLE : STATES.WALK;
+      }
+    }
+
+    // Persona behavior
+    if (this.persona === PERSONAS.APATHETIC) {
+      if (this.state === STATES.IDLE && chance(0.005)) {
+        this.state = STATES.WALK;
+        this.vx = this.direction * C.baseSpeed;
+      } else if (this.state === STATES.WALK && chance(0.02)) {
+        this.state = STATES.IDLE; this.vx = 0;
+      }
+    } else if (this.persona === PERSONAS.RESTLESS) {
+      if (this.state === STATES.IDLE) { this.state = STATES.WALK; }
+    }
+
+    if (this.state === STATES.WALK || this.state === STATES.FLEE) {
+      this.vx = this.direction * (this.state === STATES.FLEE ? C.fleeSpeed : C.walkSpeed);
+    } else if (this.state === STATES.IDLE) {
+      this.vx *= 0.8;
+    }
+
+    // Plant climbing
+    if (env.plantContact && !this.onGround(engine) && chance(0.1)) {
+      this.state = STATES.CLIMB;
+      this.vy = -C.climbSpeed;
+    }
+  }
+
+  applyGravity(engine) {
+    if (!this.onGround(engine)) {
+      this.vy += 0.15;
+      this.vy = Math.min(this.vy, 4);
+    } else {
+      this.vy = 0;
+    }
+    this.y += this.vy;
+    // ground clamp
+    const cs = CONFIG.grid.cellSize;
+    const footY = Math.floor((this.y + this.bodyH/2) / cs);
+    if (footY >= engine.h - 1) {
+      this.y = (engine.h - 1) * cs - this.bodyH/2;
+      this.vy = 0;
+    }
+  }
+
+  applyMovement(engine) {
+    const cs = CONFIG.grid.cellSize;
+    // Vertical movement
+    if (this.state === STATES.DROWNING || this.state === STATES.CLIMB || this.state === STATES.ASCENDING) {
+      this.y += this.vy;
+    } else {
+      this.applyGravity(engine);
+    }
+
+    // Horizontal
+    if (this.vx !== 0) {
+      const nx = this.x + this.vx;
+      if (this.canMoveTo(engine, nx, this.y)) {
+        this.x = nx;
+      } else {
+        // try step up
+        if (this.canMoveTo(engine, nx, this.y - cs)) {
+          this.x = nx;
+          this.y -= cs;
+        } else {
+          this.direction *= -1;
+          this.vx = 0;
+        }
+      }
+    }
+
+    // Clamp to world
+    this.x = clamp(this.x, this.bodyW, engine.w * cs - this.bodyW);
+    this.y = clamp(this.y, this.bodyH, engine.h * cs - this.bodyH);
+  }
+
+  beginLiberation() {
+    this.isLiberating = true;
+    this.libStage = 0;
+    this.libTimer = 0;
+    this.state = STATES.ASCENDING;
+    this.vx = 0; this.vy = 0;
+    this.libParticles = [];
+    this.libAura = 0;
+  }
+
+  updateLiberation(engine) {
+    this.libTimer++;
+    const C = CONFIG.stickFigures;
+
+    if (this.libStage === 0) {
+      // stillness — settles into meditation
+      this.libAura = Math.min(1, this.libAura + 0.02);
+      if (this.libTimer > 45) { this.libStage = 1; this.libTimer = 0; }
+    } else if (this.libStage === 1) {
+      // transmutation — golden glow intensifies, aura grows
+      this.libAura = Math.min(1.5, this.libAura + 0.015);
+      // emit rising sparkles
+      if (this.libTimer % 3 === 0) {
+        this.libParticles.push({
+          x: randRange(-6, 6), y: randRange(-4, 4),
+          vx: randRange(-0.3, 0.3), vy: randRange(-1.5, -0.5),
+          life: 40 + rand(30), maxLife: 70,
+          size: randRange(0.8, 2)
+        });
+      }
+      if (this.libTimer > 90) { this.libStage = 2; this.libTimer = 0; }
+    } else if (this.libStage === 2) {
+      // ascension — accelerate upward, fly to top of screen
+      const accel = 0.04;
+      this.vy = Math.max(-4, this.vy - accel);
+      this.y += this.vy;
+      this.libAura = Math.min(2.5, this.libAura + 0.01);
+      // trail of light particles
+      if (this.libTimer % 2 === 0) {
+        this.libParticles.push({
+          x: randRange(-5, 5), y: randRange(0, 6),
+          vx: randRange(-0.2, 0.2), vy: randRange(0.5, 1.5),
+          life: 30 + rand(25), maxLife: 55,
+          size: randRange(0.6, 1.8)
+        });
+      }
+      // reached top — burst into light
+      if (this.y < 10) {
+        this.y = 10;
+        this.libStage = 3;
+        this.libTimer = 0;
+        // big burst of particles
+        for (let i = 0; i < 40; i++) {
+          const ang = (i / 40) * Math.PI * 2;
+          const sp = randRange(1, 4);
+          this.libParticles.push({
+            x: 0, y: 0,
+            vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+            life: 50 + rand(40), maxLife: 90,
+            size: randRange(1, 2.5)
+          });
+        }
+      }
+    } else if (this.libStage === 3) {
+      // departure — dissolve into light at the top
+      this.libAura = Math.max(0, this.libAura - 0.03);
+      if (this.libTimer > 50) {
+        this.liberated = true;
+        this.dead = true;
+        this.isLiberating = false;
+      }
+    }
+
+    // update liberation particles
+    for (let i = this.libParticles.length - 1; i >= 0; i--) {
+      const p = this.libParticles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy -= 0.02; // drift upward
+      p.life--;
+      if (p.life <= 0) this.libParticles.splice(i, 1);
+    }
+  }
+
+  die(engine) {
+    this.dead = true;
+    // convert to ash at position
+    const cs = CONFIG.grid.cellSize;
+    const gx = this.gridX, gy = this.gridY;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (engine.inBounds(gx+dx, gy+dy) && engine.get(gx+dx, gy+dy) === P.EMPTY) {
+          engine.set(gx+dx, gy+dy, P.ASH);
+        }
+      }
+    }
+  }
+
+  render(ctx) {
+    if (this.dead && !this.isLiberating) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    let color = "#f0f0f0";
+    let alpha = 1;
+
+    if (this.isLiberating) {
+      if (this.libStage === 1) {
+        // transmutation: white → gold
+        const t = clamp(this.libTimer / 90, 0, 1);
+        color = `rgb(${Math.floor(lerp(240,255,t))},${Math.floor(lerp(240,220,t))},${Math.floor(lerp(240,90,t))})`;
+      } else if (this.libStage >= 2) {
+        // ascension: bright white-gold, intensifying
+        const t = clamp(this.libTimer / 120, 0, 1);
+        color = `rgb(255,${Math.floor(lerp(230,250,t))},${Math.floor(lerp(120,180,t))})`;
+      }
+      if (this.libStage >= 3) alpha = Math.max(0, 1 - this.libTimer / 50);
+    } else if (this.state === STATES.BURNING) {
+      color = "#FF5533";
+    } else if (this.state === STATES.DROWNING) {
+      color = "#6AB0F0";
+    } else if (this.state === STATES.BURIED) {
+      color = "#b0a080";
+    }
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = this.isLiberating && this.libStage >= 1 ? 2 : 1.5;
+    ctx.lineCap = "round";
+    if (this.isLiberating && this.libStage >= 1) {
+      ctx.shadowColor = "rgba(255,245,200,0.9)";
+      ctx.shadowBlur = 8 + this.libAura * 4;
+    }
+
+    const headR = 3;
+    const torsoTop = -this.bodyH/2 + headR*2;
+    const torsoBot = this.bodyH/2 - 6;
+    const hipY = torsoBot;
+
+    // === Liberation aura — peaceful white-gold, NOT fiery ===
+    if (this.isLiberating) {
+      const auraR = 10 + this.libAura * 7;
+      // soft white-gold outer glow (no orange)
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, auraR * 2.2);
+      grad.addColorStop(0, `rgba(255,250,220,${0.5 * this.libAura})`);
+      grad.addColorStop(0.5, `rgba(255,240,180,${0.2 * this.libAura})`);
+      grad.addColorStop(1, "rgba(220,230,255,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, auraR * 2.2, 0, Math.PI*2);
+      ctx.fill();
+
+      // vertical light beam (ascension column)
+      if (this.libStage >= 1) {
+        const beamW = 6 + this.libAura * 3;
+        const beamGrad = ctx.createLinearGradient(0, -auraR*3, 0, auraR);
+        beamGrad.addColorStop(0, "rgba(255,255,240,0)");
+        beamGrad.addColorStop(0.5, `rgba(255,250,210,${0.3 * this.libAura})`);
+        beamGrad.addColorStop(1, `rgba(255,245,190,${0.15 * this.libAura})`);
+        ctx.fillStyle = beamGrad;
+        ctx.beginPath();
+        ctx.moveTo(-beamW, -auraR * 3);
+        ctx.lineTo(beamW, -auraR * 3);
+        ctx.lineTo(beamW * 1.5, auraR);
+        ctx.lineTo(-beamW * 1.5, auraR);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // halo ring behind head (soft white-gold)
+      ctx.strokeStyle = `rgba(255,245,200,${0.8 * this.libAura})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, -this.bodyH/2 + headR, headR + 3 + this.libAura * 2.5, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,250,220,${0.2 * this.libAura})`;
+      ctx.beginPath();
+      ctx.arc(0, -this.bodyH/2 + headR, headR + 2 + this.libAura * 2, 0, Math.PI*2);
+      ctx.fill();
+
+      // gentle floating sparkles (not rotating rays)
+      if (this.libStage >= 1) {
+        for (let s = 0; s < 6; s++) {
+          const ang = (s / 6) * Math.PI * 2 + this.libTimer * 0.008;
+          const dist = auraR * (0.6 + 0.4 * Math.sin(this.libTimer * 0.03 + s));
+          const sx = Math.cos(ang) * dist;
+          const sy = Math.sin(ang) * dist - this.libTimer * 0.15;
+          ctx.fillStyle = `rgba(255,250,210,${0.5 * this.libAura})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 1.2, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // Struggle: body jitter when in danger
+    const struggling = this.beingPulled || this.captured ||
+      this.state === STATES.BURNING || this.state === STATES.BURIED || this.state === STATES.DROWNING;
+    if (struggling) {
+      ctx.translate(randRange(-0.8, 0.8), randRange(-0.8, 0.8));
+      ctx.rotate(randRange(-0.06, 0.06));
+    } else if (this.happy) {
+      // gentle happy bounce
+      ctx.translate(0, Math.abs(Math.sin(this.animTimer * 0.35)) * -1.2);
+    }
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(0, -this.bodyH/2 + headR, headR, 0, Math.PI*2);
+    ctx.fill();
+
+    // Torso (wobbles when struggling)
+    ctx.beginPath();
+    if (struggling) {
+      const wob = Math.sin(this.animTimer * 0.9) * 1.5;
+      ctx.moveTo(wob * 0.3, torsoTop);
+      ctx.lineTo(-wob * 0.5, torsoBot);
+    } else {
+      ctx.moveTo(0, torsoTop);
+      ctx.lineTo(0, torsoBot);
+    }
+    ctx.stroke();
+
+    // Limbs
+    if (this.isLiberating) {
+      // lotus position: crossed legs
+      ctx.beginPath();
+      ctx.moveTo(-4, hipY);
+      ctx.quadraticCurveTo(-7, hipY + 3, -1, hipY + 5);
+      ctx.moveTo(4, hipY);
+      ctx.quadraticCurveTo(7, hipY + 3, 1, hipY + 5);
+      ctx.stroke();
+      // meditation mudra: hands resting on lap, palms up, touching
+      ctx.beginPath();
+      ctx.moveTo(0, torsoTop + 5);
+      ctx.lineTo(-3, hipY - 1);
+      ctx.moveTo(0, torsoTop + 5);
+      ctx.lineTo(3, hipY - 1);
+      ctx.stroke();
+    } else if (this.pullAmount > 0.05) {
+      const ang = Math.atan2(this.pullY - this.y, this.pullX - this.x);
+      const s = 10 * this.pullAmount;
+      const spread = 0.35;
+      // struggle spasm added on top of stretch
+      const spasm = struggling ? Math.sin(this.animTimer * 1.2) * 3 : 0;
+      ctx.beginPath();
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(Math.cos(ang - spread) * (7 + s + spasm), torsoTop + 2 + Math.sin(ang - spread) * (7 + s + spasm));
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(Math.cos(ang + spread) * (7 + s - spasm), torsoTop + 2 + Math.sin(ang + spread) * (7 + s - spasm));
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(Math.cos(ang - spread*0.7) * (5 + s*0.8 + spasm*0.7), hipY + Math.sin(ang - spread*0.7) * (5 + s*0.8 + spasm*0.7));
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(Math.cos(ang + spread*0.7) * (5 + s*0.8 - spasm*0.7), hipY + Math.sin(ang + spread*0.7) * (5 + s*0.8 - spasm*0.7));
+      ctx.stroke();
+      // faint pull line to wheel
+      if (this.pullAmount > 0.3) {
+        ctx.globalAlpha = alpha * 0.2 * this.pullAmount;
+        ctx.strokeStyle = "#FF6600";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(this.pullX - this.x, this.pullY - this.y);
+        ctx.stroke();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+      }
+    } else if (struggling) {
+      // fast, large-amplitude struggle spasms
+      const t = this.animTimer * 1.1;
+      const armA = Math.sin(t) * 0.9;
+      const armB = Math.sin(t + 1.5) * 0.9;
+      const legA = Math.sin(t * 0.8 + 0.5) * 0.8;
+      const legB = Math.sin(t * 0.8 + 2.0) * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(-6 + armA * 5, torsoTop + 4 + Math.abs(armA) * 3);
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(6 + armB * 5, torsoTop + 4 + Math.abs(armB) * 3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(-4 + legA * 4, hipY + 4 + legA * 3);
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(4 + legB * 4, hipY + 4 + legB * 3);
+      ctx.stroke();
+    } else if (this.state === STATES.FLEE) {
+      // panicked flee: hands up / on head, fast legs
+      const t = this.animTimer * 0.5;
+      const legSwing = Math.sin(t) * 0.8;
+      // hands on head (alternating with hands up)
+      const panic = Math.sin(this.animTimer * 0.4);
+      ctx.beginPath();
+      if (panic > 0) {
+        // hands on head
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(-3, -this.bodyH/2 + headR - 1);
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(3, -this.bodyH/2 + headR - 1);
+      } else {
+        // hands up in air
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(-4 + Math.sin(t)*2, torsoTop - 6);
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(4 + Math.cos(t)*2, torsoTop - 6);
+      }
+      ctx.stroke();
+      // fast running legs
+      ctx.beginPath();
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(-3 + legSwing * 4, hipY + 5);
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(3 - legSwing * 4, hipY + 7);
+      ctx.stroke();
+    } else if (this.happy) {
+      // happy: relaxed open arms, light bouncy step
+      const t = this.animTimer * 0.3;
+      if (this.state === STATES.WALK) {
+        // arms slightly out, gentle swing
+        ctx.beginPath();
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(-6, torsoTop + 4 + Math.sin(t) * 2);
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(6, torsoTop + 4 - Math.sin(t) * 2);
+        ctx.stroke();
+        // light steps
+        ctx.beginPath();
+        ctx.moveTo(0, hipY);
+        ctx.lineTo(-2 + Math.sin(t) * 3, hipY + 5);
+        ctx.moveTo(0, hipY);
+        ctx.lineTo(2 - Math.sin(t) * 3, hipY + 5);
+        ctx.stroke();
+      } else {
+        // idle happy: arms relaxed out, gentle sway
+        const sway = Math.sin(t * 0.5) * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(-5 + sway, torsoTop + 5);
+        ctx.moveTo(0, torsoTop + 2);
+        ctx.lineTo(5 - sway, torsoTop + 5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, hipY);
+        ctx.lineTo(-2, hipY + 6);
+        ctx.moveTo(0, hipY);
+        ctx.lineTo(2, hipY + 6);
+        ctx.stroke();
+      }
+    } else {
+      // normal animated limbs
+      let armSwing = 0, legSwing = 0;
+      if (this.state === STATES.WALK) {
+        armSwing = Math.sin(this.animTimer * 0.3) * 0.5;
+        legSwing = Math.sin(this.animTimer * 0.3) * 0.6;
+      } else if (this.state === STATES.DRAGGED) {
+        armSwing = 0.3; legSwing = 0.2;
+      }
+      ctx.beginPath();
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(-5, torsoTop + 6 + armSwing * 4);
+      ctx.moveTo(0, torsoTop + 2);
+      ctx.lineTo(5, torsoTop + 6 - armSwing * 4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(-3 + legSwing * 3, hipY + 6);
+      ctx.moveTo(0, hipY);
+      ctx.lineTo(3 - legSwing * 3, hipY + 6);
+      ctx.stroke();
+    }
+
+    // Liberation particles (soft white-gold sparkles)
+    if (this.isLiberating && this.libParticles) {
+      for (const p of this.libParticles) {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        ctx.fillStyle = `rgba(255,250,${Math.floor(200 + 55*a)},${a})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// 5. FIRE WHEEL
+// ============================================================
+class FireWheel {
+  constructor() {
+    this.active = false;
+    this.x = 640; this.y = 360;
+    this.radius = 0;
+    this.targetRadius = 0;
+    this.rotation = 0;
+    this.state = "idle"; // idle, spawning, active, exploding, dissipating
+    this.isDragging = false;
+    this.dragTimer = 0;
+    this.wanderTarget = { x: 640, y: 360 };
+    this.wanderPause = 0;
+    this.absorbedCount = 0;
+    this.flameParticles = [];
+    this.autoSpawnTimer = CONFIG.fireWheel.autoSpawnInterval;
+    this.maxRadius = 734; // set dynamically in update
+  }
+
+  spawn(x, y) {
+    this.active = true;
+    this.x = x; this.y = y;
+    this.radius = 5;
+    this.targetRadius = CONFIG.fireWheel.initialRadius;
+    this.state = "spawning";
+    this.absorbedCount = 0;
+    this.flameParticles = [];
+  }
+
+  update(engine, figures, samsara) {
+    const cw = engine.w * CONFIG.grid.cellSize;
+    const ch = engine.h * CONFIG.grid.cellSize;
+    this.maxRadius = Math.sqrt(cw*cw + ch*ch) / 2;
+
+    if (!this.active) return;
+
+    this.rotation += 0.03;
+
+    // Spawning growth
+    if (this.state === "spawning") {
+      this.radius = lerp(this.radius, this.targetRadius, 0.05);
+      if (this.radius > this.targetRadius - 2) {
+        this.radius = this.targetRadius;
+        this.state = "active";
+      }
+    }
+
+    // Drag
+    if (this.isDragging) {
+      this.dragTimer = 120;
+    } else if (this.dragTimer > 0) {
+      this.dragTimer--;
+    }
+
+    // Auto-wander (slows as wheel grows)
+    if (!this.isDragging && this.dragTimer <= 0 && this.state === "active") {
+      if (this.wanderPause > 0) {
+        this.wanderPause--;
+      } else {
+        const dx = this.wanderTarget.x - this.x;
+        const dy = this.wanderTarget.y - this.y;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < 10) {
+          this.wanderTarget.x = randRange(cw*0.08, cw*0.92);
+          this.wanderTarget.y = randRange(ch*0.1, ch*0.75);
+          this.wanderPause = randRange(60, 180);
+        } else {
+          const speed = CONFIG.fireWheel.wanderSpeed * (1 - this.radius / this.maxRadius * 0.7);
+          this.x += (dx/d) * speed;
+          this.y += (dy/d) * speed;
+        }
+      }
+    }
+
+    // Active: endless growth + capture (figures orbit, do NOT die)
+    if (this.state === "active") {
+      this.targetRadius = Math.min(this.maxRadius, this.targetRadius + 0.08);
+      this.radius = lerp(this.radius, this.targetRadius, 0.03);
+
+      const detectR = this.radius + 40;
+      const detectR2 = detectR * detectR;
+      for (const fig of figures) {
+        if (fig.dead || fig.liberated || fig.isLiberating || fig.captured) continue;
+        const d2 = dist2(this.x, this.y, fig.x, fig.y);
+        if (d2 < detectR2) {
+          const d = Math.sqrt(d2);
+          const force = 40 / (d + 10);
+          fig.x += (this.x - fig.x) / d * force;
+          fig.y += (this.y - fig.y) / d * force;
+          fig.fearLevel = 1;
+          fig.beingPulled = true;
+          fig.pullX = this.x;
+          fig.pullY = this.y;
+          fig.pullAmount = Math.min(1, 1.2 - d / detectR);
+          // capture: figure orbits at the wheel's outer edge
+          if (d < this.radius * 0.9) {
+            fig.captured = true;
+            fig.captureAngle = Math.atan2(fig.y - this.y, fig.x - this.x);
+            fig.captureOffset = 0.92 + Math.random() * 0.14;
+            fig.captureRadius = this.radius * fig.captureOffset;
+            fig.captureSpeed = 0.015 + Math.random() * 0.02; // same direction as wheel
+            this.absorbedCount++;
+            this.targetRadius = Math.min(this.maxRadius, this.targetRadius + CONFIG.fireWheel.growthPerAbsorb);
+          }
+        }
+      }
+    }
+
+    // Rotate all captured figures around the wheel (stay at outer edge)
+    for (const fig of figures) {
+      if (fig.captured) {
+        fig.captureAngle += fig.captureSpeed;
+        fig.captureRadius = this.radius * (fig.captureOffset || 0.95);
+        fig.x = this.x + Math.cos(fig.captureAngle) * fig.captureRadius;
+        fig.y = this.y + Math.sin(fig.captureAngle) * fig.captureRadius;
+        fig.pullAmount = 1;
+        fig.beingPulled = true;
+        fig.pullX = this.x;
+        fig.pullY = this.y;
+      }
+    }
+
+    // Edge fire when large
+    if (this.radius > CONFIG.fireWheel.edgeFireThreshold && this.state === "active" && chance(0.08)) {
+      const edge = rand(4);
+      let ex, ey;
+      if (edge === 0) { ex = rand(engine.w); ey = 0; }
+      else if (edge === 1) { ex = rand(engine.w); ey = engine.h - 1; }
+      else if (edge === 2) { ex = 0; ey = rand(engine.h); }
+      else { ex = engine.w - 1; ey = rand(engine.h); }
+      if (engine.get(ex, ey) === P.EMPTY) engine.set(ex, ey, P.FIRE);
+    }
+
+    // Explosion when wheel fills the screen
+    if (this.state === "active" && this.radius >= this.maxRadius * 0.95) {
+      this.state = "exploding";
+      samsara.triggerExplosion(this.x, this.y);
+    }
+
+    // Flame particles (more as wheel grows)
+    if (this.active && this.radius > 5) {
+      const count = Math.min(10, 2 + Math.floor(this.radius / 50));
+      for (let i = 0; i < count; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const r = this.radius * (0.6 + Math.random() * 0.4);
+        this.flameParticles.push({
+          x: this.x + Math.cos(ang) * r,
+          y: this.y + Math.sin(ang) * r,
+          vx: Math.cos(ang) * 0.5 + randRange(-0.3,0.3),
+          vy: Math.sin(ang) * 0.5 + randRange(-0.3,0.3) - 0.5,
+          life: 20 + rand(20),
+          maxLife: 40,
+        });
+      }
+    }
+    for (let i = this.flameParticles.length - 1; i >= 0; i--) {
+      const p = this.flameParticles[i];
+      p.x += p.vx; p.y += p.vy; p.life--;
+      if (p.life <= 0) this.flameParticles.splice(i, 1);
+    }
+  }
+
+  render(ctx) {
+    if (!this.active || this.radius < 2) return;
+    ctx.save();
+
+    // Glow layers
+    for (let i = 5; i > 0; i--) {
+      const r = this.radius * (1 + i * 0.15);
+      const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
+      grad.addColorStop(0, "rgba(255,60,0,0)");
+      grad.addColorStop(0.5, `rgba(255,100,0,${0.06 * i})`);
+      grad.addColorStop(1, "rgba(255,30,0,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(this.x - r, this.y - r, r*2, r*2);
+    }
+
+    // Core glow
+    const coreGrad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 0.45);
+    coreGrad.addColorStop(0, "rgba(255,255,220,0.95)");
+    coreGrad.addColorStop(0.3, "rgba(255,180,40,0.7)");
+    coreGrad.addColorStop(0.7, "rgba(255,80,0,0.3)");
+    coreGrad.addColorStop(1, "rgba(255,30,0,0)");
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 0.45, 0, Math.PI*2);
+    ctx.fill();
+
+    const rot = this.rotation;
+    const rot2 = -this.rotation * 0.6; // counter-rotating inner layer
+    const R = this.radius;
+
+    // === Outer jagged rim (32-point flame star) ===
+    ctx.strokeStyle = "rgba(255,90,0,0.6)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let a = 0; a <= 32; a++) {
+      const ang = rot * 0.5 + (a / 32) * Math.PI * 2;
+      const r = R * (a % 2 === 0 ? 1.0 : 0.93);
+      const px = this.x + Math.cos(ang) * r;
+      const py = this.y + Math.sin(ang) * r;
+      if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // === Outer thick ring ===
+    ctx.strokeStyle = "rgba(255,110,20,0.75)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, R * 0.88, 0, Math.PI*2);
+    ctx.stroke();
+
+    // === Outer ring tick marks (32) ===
+    ctx.strokeStyle = "rgba(255,160,40,0.5)";
+    ctx.lineWidth = 1.5;
+    for (let a = 0; a < 32; a++) {
+      const ang = rot + (a / 32) * Math.PI * 2;
+      const r1 = R * 0.88, r2 = R * (a % 4 === 0 ? 0.80 : 0.84);
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(ang)*r1, this.y + Math.sin(ang)*r1);
+      ctx.lineTo(this.x + Math.cos(ang)*r2, this.y + Math.sin(ang)*r2);
+      ctx.stroke();
+    }
+
+    // === 16 main spokes ===
+    ctx.strokeStyle = "rgba(255,130,10,0.7)";
+    ctx.lineWidth = 2;
+    for (let s = 0; s < 16; s++) {
+      const ang = rot + s * Math.PI / 8;
+      const innerR = R * 0.22;
+      const outerR = R * (s % 2 === 0 ? 0.82 : 0.75);
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(ang)*innerR, this.y + Math.sin(ang)*innerR);
+      ctx.lineTo(this.x + Math.cos(ang)*outerR, this.y + Math.sin(ang)*outerR);
+      ctx.stroke();
+    }
+
+    // === Middle ring ===
+    ctx.strokeStyle = "rgba(255,100,0,0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, R * 0.6, 0, Math.PI*2);
+    ctx.stroke();
+
+    // === 8 secondary spokes (counter-rotating, between main spokes) ===
+    ctx.strokeStyle = "rgba(255,170,60,0.45)";
+    ctx.lineWidth = 1.5;
+    for (let s = 0; s < 8; s++) {
+      const ang = rot2 + s * Math.PI / 4 + Math.PI/8;
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(ang)*R*0.25, this.y + Math.sin(ang)*R*0.25);
+      ctx.lineTo(this.x + Math.cos(ang)*R*0.58, this.y + Math.sin(ang)*R*0.58);
+      ctx.stroke();
+    }
+
+    // === Inner ring ===
+    ctx.strokeStyle = "rgba(255,140,30,0.6)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, R * 0.28, 0, Math.PI*2);
+    ctx.stroke();
+
+    // === Inner hub: 8-point star ===
+    ctx.strokeStyle = "rgba(255,200,80,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let a = 0; a <= 16; a++) {
+      const ang = rot * 1.5 + (a / 16) * Math.PI * 2;
+      const r = R * (a % 2 === 0 ? 0.22 : 0.12);
+      const px = this.x + Math.cos(ang)*r;
+      const py = this.y + Math.sin(ang)*r;
+      if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // === Inner cross ===
+    ctx.strokeStyle = "rgba(255,220,120,0.5)";
+    ctx.lineWidth = 1.5;
+    for (let s = 0; s < 4; s++) {
+      const ang = rot * 1.5 + s * Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(ang)*R*0.05, this.y + Math.sin(ang)*R*0.05);
+      ctx.lineTo(this.x + Math.cos(ang)*R*0.18, this.y + Math.sin(ang)*R*0.18);
+      ctx.stroke();
+    }
+
+    // === Small hub circles at spoke ends ===
+    ctx.fillStyle = "rgba(255,180,50,0.6)";
+    for (let s = 0; s < 8; s++) {
+      const ang = rot + s * Math.PI / 4;
+      ctx.beginPath();
+      ctx.arc(this.x + Math.cos(ang)*R*0.6, this.y + Math.sin(ang)*R*0.6, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Flame particles
+    for (const p of this.flameParticles) {
+      const alpha = p.life / p.maxLife;
+      ctx.fillStyle = `rgba(255,${Math.floor(100 + 100*alpha)},0,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  containsPoint(px, py) {
+    return this.active && dist2(this.x, this.y, px, py) < this.radius * this.radius;
+  }
+}
+
+// ============================================================
+// 6. SAMSARA CYCLE MANAGER
+// ============================================================
+class SamsaraManager {
+  constructor() {
+    this.cycle = 0;
+    this.exploding = false;
+    this.explosionPhase = 0;
+    this.explosionTimer = 0;
+    this.explosionX = 0; this.explosionY = 0;
+    this.shockwaveRadius = 0;
+    this.liberationCount = 0;
+    this.totalLiberated = 0;
+    this.screenShake = 0;
+    this.flashAlpha = 0;
+    // gradual respawn after reset
+    this.respawnRemaining = 0;
+    this.respawnTimer = 0;
+  }
+
+  triggerExplosion(x, y) {
+    this.exploding = true;
+    this.explosionPhase = 0;
+    this.explosionTimer = 0;
+    this.explosionX = x; this.explosionY = y;
+    this.shockwaveRadius = 0;
+    this.screenShake = 28;
+    this.flashAlpha = 1.5;
+  }
+
+  update(engine, figures, wheels) {
+    // Gradual respawn after world reset
+    if (this.respawnRemaining > 0 && !this.exploding) {
+      this.respawnTimer--;
+      if (this.respawnTimer <= 0) {
+        this.spawnFigure(engine, figures);
+        this.respawnRemaining--;
+        this.respawnTimer = 25 + rand(35);
+      }
+    }
+
+    // Normal spawning (only when not exploding and not in respawn phase)
+    if (this.respawnRemaining === 0 &&
+        figures.filter(f => !f.dead).length < CONFIG.stickFigures.maxCount &&
+        !this.exploding) {
+      if (chance(1 / CONFIG.stickFigures.spawnInterval)) {
+        this.spawnFigure(engine, figures);
+      }
+    }
+
+    // Explosion sequence
+    if (this.exploding) {
+      this.updateExplosion(engine, figures, wheels);
+    }
+
+    // Decay effects
+    this.screenShake *= 0.88;
+    this.flashAlpha *= 0.9;
+  }
+
+  updateExplosion(engine, figures, wheels) {
+    const phases = CONFIG.explosion.phases;
+    this.explosionTimer++;
+
+    if (this.explosionPhase === 0) {
+      // implosion — wheel collapses, intense brightening
+      this.screenShake = Math.max(this.screenShake, 20);
+      if (this.explosionTimer > phases.implosion) {
+        this.explosionPhase = 1;
+        this.explosionTimer = 0;
+        this.flashAlpha = 2;
+        this.screenShake = 35;
+        // captured figures perish
+        for (const fig of figures) {
+          if (fig.captured) { fig.captured = false; fig.die(engine); }
+        }
+        // massive initial blast
+        const cs = CONFIG.grid.cellSize;
+        engine.explode(Math.floor(this.explosionX/cs), Math.floor(this.explosionY/cs), 14);
+      }
+    } else if (this.explosionPhase === 1) {
+      // blast wave — expanding destruction
+      this.shockwaveRadius += CONFIG.explosion.shockwaveSpeed * 1.3;
+      const cs = CONFIG.grid.cellSize;
+      if (this.explosionTimer % 2 === 0) {
+        const gr = Math.floor(this.shockwaveRadius / cs);
+        const cx = Math.floor(this.explosionX / cs);
+        const cy = Math.floor(this.explosionY / cs);
+        for (let a = 0; a < 36; a++) {
+          const ang = (a/36) * Math.PI*2;
+          const px = cx + Math.round(Math.cos(ang) * gr);
+          const py = cy + Math.round(Math.sin(ang) * gr);
+          if (engine.inBounds(px,py)) {
+            const i = engine.idx(px,py);
+            if (engine.grid[i] !== P.EMPTY) engine.grid[i] = P.EMPTY;
+            if (chance(0.4)) engine.setCell(i, P.FIRE, 25, 200);
+          }
+        }
+      }
+      // kill all non-liberated figures in blast
+      for (const fig of figures) {
+        if (fig.dead || fig.liberated || fig.isLiberating) continue;
+        const d = Math.sqrt(dist2(this.explosionX, this.explosionY, fig.x, fig.y));
+        if (d < this.shockwaveRadius) {
+          fig.health -= 10;
+          if (fig.health <= 0) fig.die(engine);
+        }
+      }
+      if (this.explosionTimer > phases.blast) {
+        this.explosionPhase = 2;
+        this.explosionTimer = 0;
+      }
+    } else if (this.explosionPhase === 2) {
+      // settling — ash rain, fading fire
+      if (this.explosionTimer % 4 === 0) {
+        const cs = CONFIG.grid.cellSize;
+        const ax = rand(engine.w);
+        if (engine.get(ax, 0) === P.EMPTY) engine.set(ax, 0, P.ASH);
+      }
+      if (this.explosionTimer > phases.settle) {
+        this.explosionPhase = 3;
+        this.explosionTimer = 0;
+      }
+    } else if (this.explosionPhase === 3) {
+      // rebirth — FULL WORLD RESET
+      if (this.explosionTimer === 1) {
+        this.cycle++;
+        this.liberationCount = 0;
+        // clear everything
+        engine.clear();
+        figures.length = 0;
+        // rebuild stone floor
+        for (let x = 0; x < engine.w; x++) {
+          for (let y = engine.h - 3; y < engine.h; y++) {
+            engine.set(x, y, P.STONE);
+          }
+        }
+        // reset all fire wheels
+        for (const w of wheels) {
+          w.active = false;
+          w.radius = 0;
+          w.targetRadius = 0;
+          w.state = "idle";
+          w.flameParticles = [];
+          w.absorbedCount = 0;
+        }
+        // gradual respawn
+        this.respawnRemaining = 5 + rand(4);
+        this.respawnTimer = 45;
+      }
+      if (this.explosionTimer > phases.rebirth) {
+        this.exploding = false;
+        this.explosionPhase = 0;
+      }
+    }
+  }
+
+  spawnFigure(engine, figures) {
+    const cs = CONFIG.grid.cellSize;
+    // find a spot with ground below and empty above
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const gx = 10 + rand(engine.w - 20);
+      // find ground from top
+      let gy = 0;
+      for (let y = 0; y < engine.h; y++) {
+        if (engine.isSolid(engine.get(gx, y))) { gy = y - 3; break; }
+      }
+      if (gy <= 0) gy = Math.floor(engine.h * 0.4);
+      if (engine.get(gx, gy) === P.EMPTY && engine.get(gx, gy+1) === P.EMPTY) {
+        const r = Math.random();
+        let persona = PERSONAS.APATHETIC;
+        const w = CONFIG.stickFigures.personaWeights;
+        let cum = 0;
+        for (let p = 0; p < w.length; p++) {
+          cum += w[p];
+          if (r < cum) { persona = p; break; }
+        }
+        figures.push(new StickFigure(gx * cs + cs/2, gy * cs + cs/2, persona));
+        return;
+      }
+    }
+  }
+
+  renderExplosion(ctx, canvasW, canvasH) {
+    if (!this.exploding && this.flashAlpha < 0.01 && this.screenShake < 0.5) return;
+    ctx.save();
+    // flash — white → gold → orange
+    if (this.flashAlpha > 0.01) {
+      const fa = Math.min(1, this.flashAlpha);
+      const r = Math.floor(lerp(255, 255, fa));
+      const g = Math.floor(lerp(180, 248, fa));
+      const b = Math.floor(lerp(30, 224, fa));
+      ctx.fillStyle = `rgba(${r},${g},${b},${fa * 0.7})`;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+    }
+    // shockwave — double ring
+    if (this.exploding && this.explosionPhase >= 1 && this.explosionPhase <= 2) {
+      const sr = this.shockwaveRadius;
+      // outer glow
+      const grad = ctx.createRadialGradient(
+        this.explosionX, this.explosionY, Math.max(0, sr - 50),
+        this.explosionX, this.explosionY, sr + 50
+      );
+      grad.addColorStop(0, "rgba(255,220,80,0)");
+      grad.addColorStop(0.4, "rgba(255,160,20,0.5)");
+      grad.addColorStop(0.7, "rgba(255,80,0,0.3)");
+      grad.addColorStop(1, "rgba(255,30,0,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(this.explosionX, this.explosionY, sr + 50, 0, Math.PI*2);
+      ctx.fill();
+      // bright inner ring
+      ctx.strokeStyle = `rgba(255,240,180,${Math.max(0, 0.8 - this.explosionTimer/120)})`;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(this.explosionX, this.explosionY, sr, 0, Math.PI*2);
+      ctx.stroke();
+      // secondary ring
+      ctx.strokeStyle = `rgba(255,140,30,${Math.max(0, 0.5 - this.explosionTimer/150)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.explosionX, this.explosionY, sr * 0.7, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// 7. INPUT HANDLER
+// ============================================================
+class InputHandler {
+  constructor(canvas, game) {
+    this.canvas = canvas;
+    this.game = game;
+    this.mouseX = 0; this.mouseY = 0;
+    this.mouseDown = false;
+    this.rightDown = false;
+    this.draggedFigure = null;
+    this.draggedWheel = null;
+    this.lastDrawX = 0; this.lastDrawY = 0;
+
+    canvas.addEventListener("mousedown", (e) => this.onDown(e));
+    canvas.addEventListener("mousemove", (e) => this.onMove(e));
+    canvas.addEventListener("mouseup", (e) => this.onUp(e));
+    canvas.addEventListener("mouseleave", () => { this.mouseDown = false; this.rightDown = false; this.onUp({}); });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  getCanvasPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }
+
+  onDown(e) {
+    const pos = this.getCanvasPos(e);
+    this.mouseX = pos.x; this.mouseY = pos.y;
+    this.lastDrawX = pos.x; this.lastDrawY = pos.y;
+
+    if (e.button === 2) {
+      this.rightDown = true;
+      // right-click cut plant
+      this.cutPlant(pos.x, pos.y);
+      return;
+    }
+
+    this.mouseDown = true;
+
+    // Priority: figure > wheel > canvas
+    const fig = this.hitTestFigure(pos.x, pos.y);
+    if (fig && !fig.liberated && !fig.isLiberating && !fig.captured) {
+      this.draggedFigure = fig;
+      fig.isDragged = true;
+      fig.dragOffX = pos.x - fig.x;
+      fig.dragOffY = pos.y - fig.y;
+      return;
+    }
+
+    // hit test wheels (topmost / last drawn first)
+    for (let i = this.game.wheels.length - 1; i >= 0; i--) {
+      const w = this.game.wheels[i];
+      if (w.containsPoint(pos.x, pos.y)) {
+        this.draggedWheel = w;
+        w.isDragging = true;
+        return;
+      }
+    }
+
+    // draw particle
+    this.drawParticle(pos.x, pos.y);
+  }
+
+  onMove(e) {
+    const pos = this.getCanvasPos(e);
+    this.mouseX = pos.x; this.mouseY = pos.y;
+
+    if (this.draggedFigure) {
+      const f = this.draggedFigure;
+      f.x = lerp(f.x, pos.x - f.dragOffX, CONFIG.stickFigures.dragLerp);
+      f.y = lerp(f.y, pos.y - f.dragOffY, CONFIG.stickFigures.dragLerp);
+      return;
+    }
+
+    if (this.draggedWheel) {
+      const w = this.draggedWheel;
+      w.x = lerp(w.x, pos.x, CONFIG.fireWheel.dragLerp);
+      w.y = lerp(w.y, pos.y, CONFIG.fireWheel.dragLerp);
+      return;
+    }
+
+    if (this.mouseDown) {
+      // interpolate drawing
+      const dx = pos.x - this.lastDrawX;
+      const dy = pos.y - this.lastDrawY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const steps = Math.max(1, Math.floor(dist / 2));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        this.drawParticle(
+          this.lastDrawX + dx * t,
+          this.lastDrawY + dy * t
+        );
+      }
+    }
+    this.lastDrawX = pos.x; this.lastDrawY = pos.y;
+
+    if (this.rightDown) {
+      this.cutPlant(pos.x, pos.y);
+    }
+  }
+
+  onUp(e) {
+    if (this.draggedFigure) {
+      this.draggedFigure.isDragged = false;
+      this.draggedFigure.stunTimer = CONFIG.stickFigures.dragStun;
+      this.draggedFigure.state = STATES.STUNNED;
+      this.draggedFigure = null;
+    }
+    if (this.draggedWheel) {
+      this.draggedWheel.isDragging = false;
+      this.draggedWheel = null;
+    }
+    this.mouseDown = false;
+    this.rightDown = false;
+  }
+
+  hitTestFigure(x, y) {
+    for (const f of this.game.figures) {
+      if (f.dead) continue;
+      if (Math.abs(x - f.x) < f.bodyW && Math.abs(y - f.y) < f.bodyH) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  drawParticle(px, py) {
+    const engine = this.game.engine;
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(px / cs);
+    const gy = Math.floor(py / cs);
+    const r = this.game.brushSize;
+    const type = this.game.selectedParticle;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx*dx + dy*dy > r*r) continue;
+        const x = gx + dx, y = gy + dy;
+        if (!engine.inBounds(x, y)) continue;
+        if (type === P.EMPTY) {
+          engine.set(x, y, P.EMPTY);
+        } else if (engine.get(x, y) === P.EMPTY) {
+          engine.set(x, y, type);
+          if (type === P.FIRE) {
+            const i = engine.idx(x, y);
+            engine.life[i] = 0; engine.temp[i] = 200;
+          } else if (type === P.MAGMA) {
+            const i = engine.idx(x, y);
+            engine.temp[i] = 255;
+          }
+        }
+      }
+    }
+  }
+
+  cutPlant(px, py) {
+    const engine = this.game.engine;
+    const cs = CONFIG.grid.cellSize;
+    const gx = Math.floor(px / cs);
+    const gy = Math.floor(py / cs);
+    const r = Math.max(1, this.game.brushSize);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = gx+dx, y = gy+dy;
+        if (engine.inBounds(x,y) && engine.get(x,y) === P.PLANT) {
+          engine.set(x, y, P.ASH);
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// 8. UI MANAGER
+// ============================================================
+class UIManager {
+  constructor(game) {
+    this.game = game;
+    this.toolbar = document.getElementById("toolbar");
+    this.hud = document.getElementById("hud");
+    this.buildButtons();
+  }
+
+  buildButtons() {
+    const tb = this.toolbar;
+    // Particle buttons
+    for (let i = 1; i <= 9; i++) {
+      const info = PARTICLE_INFO[i];
+      const btn = document.createElement("button");
+      btn.className = "btn" + (i === this.game.selectedParticle ? " active" : "");
+      btn.innerHTML = `<span class="color-swatch" style="background:${info.color}"></span>${info.name}<span class="btn-label">${info.cn}</span>`;
+      btn.addEventListener("click", () => {
+        this.game.selectedParticle = i;
+        this.updateActiveButtons();
+      });
+      tb.appendChild(btn);
+    }
+    // Eraser
+    const eraser = document.createElement("button");
+    eraser.className = "btn";
+    eraser.innerHTML = `Erase<span class="btn-label">擦除</span>`;
+    eraser.addEventListener("click", () => {
+      this.game.selectedParticle = P.EMPTY;
+      this.updateActiveButtons();
+    });
+    tb.appendChild(eraser);
+
+    // Separator
+    const sep = document.createElement("div");
+    sep.style.width = "1px"; sep.style.height = "24px"; sep.style.background = "#444";
+    tb.appendChild(sep);
+
+    // Brush slider
+    const sliderGroup = document.createElement("div");
+    sliderGroup.className = "slider-group";
+    sliderGroup.innerHTML = `
+      <label>Brush 笔刷</label>
+      <input type="range" min="1" max="15" value="${this.game.brushSize}" id="brushSlider">
+      <span class="slider-val" id="brushVal">${this.game.brushSize}</span>
+    `;
+    tb.appendChild(sliderGroup);
+    this.slider = sliderGroup.querySelector("#brushSlider");
+    this.sliderVal = sliderGroup.querySelector("#brushVal");
+    this.slider.addEventListener("input", (e) => {
+      this.game.brushSize = parseInt(e.target.value);
+      this.sliderVal.textContent = this.game.brushSize;
+    });
+
+    // Separator
+    const sep2 = document.createElement("div");
+    sep2.style.width = "1px"; sep2.style.height = "24px"; sep2.style.background = "#444";
+    tb.appendChild(sep2);
+
+    // Actions
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "btn action";
+    clearBtn.innerHTML = `Clear<span class="btn-label">清空</span>`;
+    clearBtn.addEventListener("click", () => {
+      this.game.engine.clear();
+      // rebuild stone floor
+      const eng = this.game.engine;
+      for (let x = 0; x < eng.w; x++) {
+        for (let y = eng.h - 3; y < eng.h; y++) {
+          eng.set(x, y, P.STONE);
+        }
+      }
+      this.game.figures.length = 0;
+      this.game.samsara.liberationCount = 0;
+      this.game.samsara.cycle = 0;
+      this.game.samsara.exploding = false;
+      this.game.samsara.respawnRemaining = 0;
+      // reset all fire wheels
+      this.game.wheels = [];
+    });
+    tb.appendChild(clearBtn);
+
+    const wheelBtn = document.createElement("button");
+    wheelBtn.className = "btn action";
+    wheelBtn.innerHTML = `Wheel<span class="btn-label">火轮</span>`;
+    wheelBtn.addEventListener("click", () => {
+      const cw = this.game.canvas.width, ch = this.game.canvas.height;
+      const w = new FireWheel();
+      w.spawn(randRange(cw*0.15, cw*0.85), randRange(ch*0.15, ch*0.7));
+      this.game.wheels.push(w);
+    });
+    tb.appendChild(wheelBtn);
+
+    const spawnBtn = document.createElement("button");
+    spawnBtn.className = "btn action";
+    spawnBtn.innerHTML = `Soul<span class="btn-label">灵魂</span>`;
+    spawnBtn.addEventListener("click", () => {
+      this.game.samsara.spawnFigure(this.game.engine, this.game.figures);
+    });
+    tb.appendChild(spawnBtn);
+  }
+
+  updateActiveButtons() {
+    const btns = this.toolbar.querySelectorAll(".btn");
+    btns.forEach((b, i) => {
+      // first 9 are particles, index 9 is eraser
+      b.classList.toggle("active",
+        (i < 9 && i === this.game.selectedParticle - 1) ||
+        (i === 9 && this.game.selectedParticle === P.EMPTY)
+      );
+    });
+  }
+
+  updateHUD() {
+    const alive = this.game.figures.filter(f => !f.dead).length;
+    const liberated = this.game.totalLiberated + this.game.figures.filter(f => f.liberated).length;
+    const activeWheels = this.game.wheels.filter(w => w.active);
+    const wheelState = activeWheels.length > 0 ?
+      `${activeWheels.length} active` : "idle";
+    this.hud.innerHTML = `Cycle <span>${this.game.samsara.cycle}</span> | Souls <span>${alive}</span> | Liberated <span>${liberated}</span> | Wheel <span>${wheelState}</span>`;
+  }
+}
+
+// ============================================================
+// 9. MAIN GAME
+// ============================================================
+class Game {
+  constructor() {
+    this.canvas = document.getElementById("gameCanvas");
+    this.ctx = this.canvas.getContext("2d");
+    this.offCanvas = document.createElement("canvas");
+    this.offCanvas.width = CONFIG.grid.width;
+    this.offCanvas.height = CONFIG.grid.height;
+    this.offCtx = this.offCanvas.getContext("2d");
+
+    this.engine = new ParticleEngine(CONFIG.grid.width, CONFIG.grid.height);
+    this.figures = [];
+    this.wheels = [];
+    this.samsara = new SamsaraManager();
+
+    this.selectedParticle = P.SAND;
+    this.brushSize = 3;
+    this.totalLiberated = 0;
+
+    this.ui = new UIManager(this);
+    this.input = new InputHandler(this.canvas, this);
+
+    this.lastTime = 0;
+    this.accumulator = 0;
+    this.FIXED_DT = 1000 / 60;
+
+    this.resize();
+    window.addEventListener("resize", () => this.resize());
+
+    // initial terrain: floor
+    for (let x = 0; x < this.engine.w; x++) {
+      for (let y = this.engine.h - 3; y < this.engine.h; y++) {
+        this.engine.set(x, y, P.STONE);
+      }
+    }
+    // some initial figures
+    for (let i = 0; i < 8; i++) {
+      this.samsara.spawnFigure(this.engine, this.figures);
+    }
+  }
+
+  resize() {
+    const wrap = document.getElementById("gameWrap");
+    const availW = wrap.clientWidth;
+    const availH = wrap.clientHeight;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    const scale = Math.min(availW / cw, availH / ch);
+    this.canvas.style.width = (cw * scale) + "px";
+    this.canvas.style.height = (ch * scale) + "px";
+  }
+
+  update() {
+    this.engine.update();
+
+    // Update figures
+    for (const f of this.figures) {
+      f.update(this.engine, this.wheels, this.samsara);
+    }
+    // Count liberated this cycle
+    const newlyLiberated = this.figures.filter(f => f.liberated && !f._counted);
+    for (const f of newlyLiberated) {
+      f._counted = true;
+      this.samsara.liberationCount++;
+      this.totalLiberated++;
+    }
+    // Remove dead figures
+    this.figures = this.figures.filter(f => !f.dead || f.isLiberating);
+
+    for (const w of this.wheels) w.update(this.engine, this.figures, this.samsara);
+    // Remove spent wheels
+    this.wheels = this.wheels.filter(w => w.active || w.radius > 0);
+    this.samsara.update(this.engine, this.figures, this.wheels);
+  }
+
+  render() {
+    const ctx = this.ctx;
+    const cs = CONFIG.grid.cellSize;
+    const cw = this.canvas.width, ch = this.canvas.height;
+
+    // Screen shake
+    ctx.save();
+    if (this.samsara.screenShake > 0.5) {
+      ctx.translate(
+        randRange(-this.samsara.screenShake, this.samsara.screenShake),
+        randRange(-this.samsara.screenShake, this.samsara.screenShake)
+      );
+    }
+
+    // Clear
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0, 0, cw, ch);
+
+    // Particles (render to offscreen then scale up)
+    this.engine.render(this.offCtx);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.offCanvas, 0, 0, cw, ch);
+
+    // Fire wheels
+    for (const w of this.wheels) w.render(ctx);
+
+    // Stick figures
+    for (const f of this.figures) {
+      f.render(ctx);
+    }
+
+    // Explosion effects
+    this.samsara.renderExplosion(ctx, cw, ch);
+
+    // Brush preview
+    if (this.input.mouseX >= 0 && this.input.mouseY >= 0) {
+      const bx = this.input.mouseX;
+      const by = this.input.mouseY;
+      const r = this.brushSize * cs;
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    this.ui.updateHUD();
+  }
+
+  loop(timestamp) {
+    if (!this.lastTime) this.lastTime = timestamp;
+    const dt = timestamp - this.lastTime;
+    this.lastTime = timestamp;
+    this.accumulator += dt;
+
+    let steps = 0;
+    while (this.accumulator >= this.FIXED_DT && steps < 5) {
+      this.update();
+      this.accumulator -= this.FIXED_DT;
+      steps++;
+    }
+
+    this.render();
+    requestAnimationFrame((t) => this.loop(t));
+  }
+
+  start() {
+    requestAnimationFrame((t) => this.loop(t));
+  }
+}
+
+// ============================================================
+// 10. INIT
+// ============================================================
+window.addEventListener("load", () => {
+  const game = new Game();
+  game.start();
+});
+</script>
+</body>
+</html>
