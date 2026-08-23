@@ -403,7 +403,7 @@ class ParticleEngine {
       stack.length = 0;
       stack.push(i0);
       visited[i0] = 1;
-      const cols = new Map();          // x -> {top, bottom, count}
+      const cols = new Map();          // x -> {top, bottom, count, clean}
       let cells = 0, supported = 0;
       while (stack.length) {
         const i = stack.pop();
@@ -424,17 +424,32 @@ class ParticleEngine {
       }
       if (cells < 8) continue;                    // droplets: CA suffices
       if (supported < cells * 0.9) continue;      // mid-air: not a pond yet
-      this.equalizeColumns(cols, cells);
+      // Columns with gaps inside their span (droplets stranded on
+      // ledges, holes from sinking debris) have tops that do not name
+      // the true surface; levelling through them just shuffles cells
+      // that the CA immediately scatters, so the pond breathes forever.
+      // Only clean, solid columns take part this cycle.
+      for (const c of cols.values()) {
+        c.clean = c.count === c.bottom - c.top + 1;
+      }
+      this.equalizeColumns(cols);
     }
   }
 
   // Solve the shared surface level L for one body, then shift at most
-  // MAX_MOVES cells per pass from surplus columns to deficit columns.
-  equalizeColumns(cols, totalCells) {
+  // one cell per column of the deepest shore stretch per pass. Only
+  // clean (gap-free) columns take part — see levelWater().
+  equalizeColumns(cols) {
     const grid = this.grid, life = this.life, temp = this.temp;
     const w = this.w, h = this.h;
     const arr = [];
-    for (const [x, c] of cols) arr.push({ x, top: c.top, bottom: c.bottom, count: c.count });
+    let totalCells = 0;
+    for (const [x, c] of cols) {
+      if (!c.clean) continue;
+      arr.push({ x, top: c.top, bottom: c.bottom, count: c.count });
+      totalCells += c.count;
+    }
+    if (arr.length < 2 || totalCells < 8) return;
     arr.sort((a, b) => a.bottom - b.bottom);      // by floor height
     const n = arr.length;
 
@@ -449,14 +464,35 @@ class ParticleEngine {
       else { L = needL; break; }
     }
 
+    // Exact targets: ceil() above overshoots by a few cells, and that
+    // phantom surplus used to roam the pond forever as one column after
+    // another dipped to −2 and got trimmed. Distribute the remainder so
+    // the targets sum to EXACTLY the water on hand — then every move
+    // strictly reduces total disagreement and the surface truly freezes.
+    let excess = 0;
+    for (const c of arr) {
+      const F = c.bottom + 1;
+      c.target = F <= L ? L - F : 0;
+      excess += c.target;
+    }
+    excess -= totalCells;
+    if (excess > 0) {
+      const byDepth = [...arr].sort((a, b) => b.target - a.target);
+      while (excess > 0) {
+        let trimmed = 0;
+        for (let i = 0; i < byDepth.length && excess > 0; i++) {
+          if (byDepth[i].target > 0) { byDepth[i].target--; excess--; trimmed++; }
+        }
+        if (trimmed === 0) break;   // every target already zero
+      }
+    }
+
     // classify columns against the target. Donors must be clearly above
     // target (delta ≤ −2) so motion is one-way and never churns; takers
     // qualify from delta ≥ 1 so the pond trims to within a single row.
     const surplus = [], deficit = [];
     for (const c of arr) {
-      const F = c.bottom + 1;
-      const targetH = F <= L ? L - F : 0;
-      const delta = targetH - c.count;
+      const delta = c.target - c.count;
       if (delta <= -2) surplus.push({ x: c.x, top: c.top, need: -delta });
       else if (delta >= 1) deficit.push({ x: c.x, top: c.top, bottom: c.bottom, need: delta });
     }
@@ -467,7 +503,9 @@ class ParticleEngine {
     // pumping many cells into a few narrow columns makes the surface
     // leap up in spikes that immediately collapse, and the pond never
     // seems to settle. The deepest stretch fills first; donors are drawn
-    // in order so the opposite shore sinks evenly too.
+    // in order so the opposite shore sinks evenly too. A stretch whose
+    // columns are all blocked (a bridge overhead, say) is skipped so it
+    // cannot starve the rest of the pond.
     deficit.sort((a, b) => a.x - b.x);
     const runs = [];
     for (const d of deficit) {
@@ -477,24 +515,28 @@ class ParticleEngine {
     }
     runs.sort((a, b) =>
       b.reduce((s, c) => s + c.need, 0) - a.reduce((s, c) => s + c.need, 0));
-    const run = runs[0];
     let si = 0;
-    for (const D of run) {
-      // one cell onto this column, if it has room and headroom
-      while (si < surplus.length) {
-        const ty = D.top - 1;
-        if (ty < 0 || grid[ty * w + D.x] !== P.EMPTY) break;          // cannot receive
-        if (ty - 1 >= 0 && grid[(ty - 1) * w + D.x] !== P.EMPTY) break;
-        const S = surplus[si];
-        const dstIdx = ty * w + D.x;
-        grid[dstIdx] = P.WATER; life[dstIdx] = 0; temp[dstIdx] = 0;
-        D.top--; D.need--;
-        const srcIdx = S.top * w + S.x;
-        grid[srcIdx] = P.EMPTY; life[srcIdx] = 0; temp[srcIdx] = 0;
-        S.top++; S.need--;
-        if (S.need <= 0) si++;
-        break;   // one cell per column per pass
+    for (const run of runs) {
+      let served = 0;
+      for (const D of run) {
+        // one cell onto this column, if it has room and headroom
+        while (si < surplus.length) {
+          const ty = D.top - 1;
+          if (ty < 0 || grid[ty * w + D.x] !== P.EMPTY) break;          // cannot receive
+          if (ty - 1 >= 0 && grid[(ty - 1) * w + D.x] !== P.EMPTY) break;
+          const S = surplus[si];
+          const dstIdx = ty * w + D.x;
+          grid[dstIdx] = P.WATER; life[dstIdx] = 0; temp[dstIdx] = 0;
+          D.top--; D.need--;
+          const srcIdx = S.top * w + S.x;
+          grid[srcIdx] = P.EMPTY; life[srcIdx] = 0; temp[srcIdx] = 0;
+          S.top++; S.need--;
+          if (S.need <= 0) si++;
+          served++;
+          break;   // one cell per column per pass
+        }
       }
+      if (served > 0) break;   // deepest stretch that could take water wins
     }
   }
 
@@ -633,8 +675,11 @@ class ParticleEngine {
         this.moveTo(i, this.idx(dx2,y+1)); return;
       }
     }
-    // horizontal flow: seek a drop (cell with empty below), range 6
-    const range = 6;
+    // horizontal flow: seek a drop (cell with empty below), range 10.
+    // Sideways motion only ever happens toward a genuine fall — flowing
+    // onto flat ground made surface cells hop between rims forever as
+    // the scan direction alternated, so ponds never looked settled.
+    const range = 10;
     for (const d of [dir, -dir]) {
       for (let step = 1; step <= range; step++) {
         const nx = x + d * step;
@@ -647,25 +692,7 @@ class ParticleEngine {
         }
       }
     }
-    // no drop: flow to farthest empty cell in scan direction
-    for (let step = 1; step <= range; step++) {
-      const nx = x + dir * step;
-      if (!this.inBounds(nx,y)) break;
-      const ni = this.idx(nx,y);
-      if (this.grid[ni] !== P.EMPTY) break;
-      if (step === range || !this.inBounds(nx+dir,y) || this.grid[this.idx(nx+dir,y)] !== P.EMPTY) {
-        this.moveTo(i, ni); return;
-      }
-    }
-    for (let step = 1; step <= range; step++) {
-      const nx = x - dir * step;
-      if (!this.inBounds(nx,y)) break;
-      const ni = this.idx(nx,y);
-      if (this.grid[ni] !== P.EMPTY) break;
-      if (step === range || !this.inBounds(nx-dir,y) || this.grid[this.idx(nx-dir,y)] !== P.EMPTY) {
-        this.moveTo(i, ni); return;
-      }
-    }
+    // settled: nothing to fall toward within reach
   }
 
   // --- FIRE ---
