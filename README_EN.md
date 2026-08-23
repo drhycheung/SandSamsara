@@ -18,6 +18,30 @@ Sand-Samsara is a modern artistic reimagining of the 2005 classic particle sandb
 
 ---
 
+## About This Game
+
+This is a falling-particle sandbox game. Playing as an observer, you scatter sand, fire, water, magma and other substances across the world, watching the fortunes of countless stick-figure beings.
+
+All beings awaken in this world carrying no memory of the past.
+
+Some drift through their days in numb confusion; some pace restlessly without end; some struggle with all their might to evade disaster and survive; and others obsessively seek the edge of the world, yearning for escape and immortality.
+
+Yet merely fleeing suffering and struggling to stay alive brings no true liberation.
+
+Periodically, the Wheel of Karmic Fire descends upon this world. The vast majority of beings are consumed by flame, their memories erased entirely, and new lives are born here once more — over and over, cycle after cycle.
+
+Only a rare few beings — letting go of restlessness, fear, and the craving to chase outward — abide still and unmoved. For them, ascension becomes possible: they turn into golden bodies of light rising upward, leaving this world of sand forever, never to take part in the cycle again.
+
+Liberation is exceedingly rare; in most cycles, not even a single liberated one will appear.
+
+**You may intervene in the world, sowing circumstances of every kind, becoming one link among countless causes — yet you cannot control the final outcome.**
+
+Every ending arises from the convergence of innumerable conditions. Each being carries its own karmic inclination; the player is merely one external condition among many, never the sole arbiter of any destiny. Every fate can only be met with acceptance of conditions as they converge.
+
+You may create peril, or create an environment of peace — but you cannot appoint who attains liberation. Awakening can only arise from the transformation of a being's own mind.
+
+---
+
 ## Worldview Lore
 
 This is Sand-Samsara, a formless realm constructed of particles and dust.
