@@ -1,98 +1,98 @@
 <div align="center">
 
-# 沙界轮回 · Sand Samsara
+# Sand Samsara · 沙界轮回
 
-一座由微尘与粒子构成的无名世间。众生随业浮沉，万般命运，只可随缘。
+A formless realm constructed of particles and dust. All beings drift with karma; every destiny unfolds by conditions alone.
 
-**▶ 在线试玩 Play Online：<https://drhycheung.github.io/SandSamsara/>**
+**▶ Play Online: <https://drhycheung.github.io/SandSamsara/>**
 
-[English](README_EN.md) ｜ 简体中文
+English ｜ [简体中文](README_zh.md)
 
 </div>
 
 ---
 
-## 开篇声明 & 创作溯源
+## Opening Statement & Creative Provenance
 
-本项目《沙界轮回 / Sand Samsara》是对 2005 年经典粒子沙盒《Hell of Sand》的现代艺术再演绎。本作融入轮回与业力的哲学意象作为纯艺术创作，并非正统佛教教义复刻，不具备宗教参考价值。游戏本体无任何文字剧情，本篇说明仅为感兴趣的读者提供背景补充。
+Sand Samsara is a modern artistic reimagining of the 2005 classic particle sandbox game *Hell of Sand*. All karmic and samsara-themed mechanics are creative artistic interpretations, not orthodox religious doctrine. There is no in-game text or storyline. This documentation only provides background context for interested readers.
 
-> **内容提醒：** 游戏包含火焰、死亡、挣扎与世界毁灭等意象，可能引起部分玩家不适，请酌情体验。
+> **Content note:** The game includes depictions of fire, death, struggle, and world destruction that may cause discomfort for some players. Please play at your discretion.
 
 ---
 
-## 世界观与玩法
+## Worldview & Gameplay
 
 ![Screenshot](screenshot.png)
 
-《沙界轮回》是一款下落粒子沙盒艺术作品，构筑出一个由微尘与粒子凝聚而成的无名沙界。玩家并非单纯的旁观者，而是世间的一缕外缘：可以投放沙、水、火、岩浆等物质，改变地形与环境；也可以退后一步，静观火柴人众生在其中求生、挣扎与轮回。
+*Sand Samsara* is a falling-particle sandbox art piece that builds a nameless realm from dust and particles. You are no mere spectator but an external condition within this world: you can place sand, water, fire, magma and other substances to reshape the terrain and its circumstances, or step back and watch stick-figure beings struggle, survive and cycle through rebirth.
 
-所有众生都在懵懂中降生，不带前世记忆，不识轮回，也不解因果。它们心性各异：有的麻木游荡、浑噩度日；有的躁动奔波，追逐水源与沃土；有的疲于奔命，只求避开眼前的苦痛。它们试图通过改变外在处境获得安宁，却始终困在无明与执念之中。
+All beings are born in a state of innocence, carrying no memory of past lives, knowing nothing of samsara and unable to grasp causation. Their temperaments differ: some drift numbly through muddled days; some rush restlessly after water and fertile ground; others struggle simply to avoid the suffering before them. They try to find peace by changing their outward circumstances, yet remain trapped in ignorance and attachment.
 
-众生受**贪婪**与**恐惧**驱动。贪婪使它们渴望草木丰茂之地、逐水而居；越是贪求，越可能不顾险阻，只为更快抵达那片绿荫。当两颗贪心觊觎同一处栖身之所，争夺便会演变为推搡与搏斗，甚至以死亡收场。恐惧则使它们畏惧火焰与熔岩；越是怯懦，越早感知危险，也越急于逃离，奔逃途中难免彼此冲撞。求不得而争，畏失去而逃，所有追逐与奔逃皆不离痴执。
+Beings are driven by **greed** and **fear**. Greed draws them toward lush greenery and the water's edge; the stronger the craving, the more readily they ignore danger to reach the shade. When two greedy hearts covet the same refuge, rivalry can become shoving and open combat, sometimes ending in death. Fear makes them recoil from fire and flee molten rock; the more timid they are, the sooner they sense danger and the faster they run, colliding with one another in panic. Fighting for what cannot be obtained and fleeing what might be lost, every pursuit and escape remains bound to attachment.
 
-死亡从来不是终点。无论殒于烈焰、熔岩、溺水，还是丧生于同类搏斗，亡者都会立即转世重生；逝去者即刻离场，新生命随之降生，生生死死、循环不息，正是“轮回”二字最直观的呈现。
+Death is never the end. Whether consumed by flame or magma, drowned in water, or killed by their own kind, the dead are immediately reborn. One life leaves as another arrives, birth and death following one another without pause: the most direct expression of samsara.
 
-沙界中还游荡着代表集体恶业的**火之业轮**。它会自行遍历世界，也能被玩家拖拽牵引；被其引力卷入的众生越多，共业越重，业轮便越发庞大。随着业轮扩张，众生会被逐渐挤向世界边缘，边界烈焰随之滋生并封堵退路。然而，水源与生长的草木也能成为庇护与复苏之地：当业轮接触它们时，会逐渐缩小，并周期性释放被困的众生。若业轮持续扩张至极限，世界仍会崩坏，烈焰席卷全域，粒子溃散，整个沙界归于焚毁。
+The realm is also haunted by the **Wheel of Karmic Fire**, the embodiment of collective unwholesome karma. It traverses the world on its own, but the player can also drag and steer it. The more beings drawn into its pull, the heavier the collective karma becomes and the larger the wheel grows. As it expands, beings are pressed toward the world's edges, where border flames arise and seal off their escape. Yet water and living greenery can become places of refuge and renewal: when the wheel touches them, it gradually shrinks and periodically releases a captured soul. Should the wheel continue expanding until it reaches its limit, the world collapses: fire sweeps across the realm, particles scatter, and the entire Sand Realm burns away.
 
-毁灭并非惩罚，而是因缘聚合后的必然结果。短暂沉寂之后，世界重置，新一轮无知众生再次降生；无记忆、无过往，轮回重新开始。
+Destruction is not punishment but the inevitable result of causes and conditions converging. After a brief stillness, the world resets and another generation of unknowing beings is born: without memory, without a past, the cycle begins again.
 
-在无尽轮回中，大多数众生都随业力浮沉、徒劳挣扎，最终与世界一同消散。极少数能够放下恐惧、求生执念，以及一切向外追逐的躁动，安住本心、寂然不动的众生，则可能获得觉悟：身形化作金色光辉，缓缓升腾，彻底脱离轮回。这样的解脱极其罕见，许多轮回之中甚至没有任何众生得以出离。
+In this endless turning of samsara, most beings drift with their karma, struggle in vain, and eventually vanish with the world. A rare few can let go of fear, the craving for survival and every restless pursuit of the outer world, becoming serene and unmoving within themselves. In that state, awakening may occur: the body becomes golden radiance and slowly rises beyond the realm, leaving the cycle of rebirth forever. Such liberation is exceedingly rare; many cycles pass without a single being escaping.
 
-玩家可以造境、投放元素、牵引业轮，作为因缘的一环介入世界，却无法主宰任何众生的因果，也不能代替它们觉悟解脱。每个众生都有自己的业力与宿命，玩家的干预只是外在缘法；所有命运、浮沉、毁灭与超脱，终究由无数因缘共同塑成，万般际遇，只可随缘。
+You may shape the realm, place elements and steer the wheel, becoming one link among countless causes and conditions. Yet you cannot command the karma of any being or awaken on its behalf. Every being carries its own karma and destiny; the player's intervention is only one external condition among many. All fates — drifting, ruin, destruction and transcendence — arise from innumerable causes converging, and every destiny can only be met with acceptance.
 
-游戏本身没有文字剧情、提示与旁白，玩家只能通过观察，体悟世界的规律与内核。本文仅为外部补充说明，不属于游戏内体验。
-
----
-
-## 操作一览
-
-| 操作 | 效果 |
-|------|------|
-| 左键点击／拖动空白处 | 绘制当前所选元素（沙、水、火、岩浆、油、石、火药、灰烬、植物） |
-| 左键按住火柴人 | 牵引该众生，松开后其短暂眩晕 |
-| 左键按住火之业轮 | 拖拽业轮；松开后业轮恢复自主游走 |
-| 右键（按住拖动） | 剪除植物（化为灰烬） |
-| 触屏设备 | 单指触摸等同左键：绘制元素、牵引众生或拖拽业轮；画面与按钮自适应手机／平板 |
-| 顶部工具栏 | 切换元素、调节画笔粗细、清空世界、手动召唤业轮、加入新灵魂 |
+The game contains no written story, prompts or narration. Players can only observe the world's patterns and contemplate its underlying nature. This README is an external supplement for readers interested in the project's creative background and worldview; it is not part of the in-game experience.
 
 ---
 
-## 运行与部署说明
+## Controls
 
-### 本地快速运行（零配置）
+| Action | Effect |
+|--------|--------|
+| Left-click / drag on empty ground | Draw the selected element (sand, water, fire, magma, oil, stone, gunpowder, ash, plant) |
+| Left-click and hold a stick figure | Drag that being; it is briefly stunned after release |
+| Left-click and hold the Wheel of Karmic Fire | Steer the wheel; on release it resumes wandering on its own |
+| Right-click (hold and drag) | Cut plants (they turn to ash) |
+| Touch devices | A single finger acts as the left button: draw elements, drag beings or steer the wheel; the canvas and controls adapt to phones/tablets |
+| Toolbar at the top | Switch elements, adjust brush size, clear the world, summon the wheel manually, add a new soul |
 
-本项目为纯静态单文件网页，无后端、无依赖、无需编译。下载项目全部文件后，直接双击根目录下的 `index.html` 文件，即可用默认浏览器打开游玩，支持所有主流浏览器。
+---
 
-也可以使用 Python 在项目根目录启动一个简易本地服务器：
+## Run & Deployment Guide
+
+### Local Quick Start (Zero Configuration)
+
+This is a pure static single-file web project with no backend, dependencies, or compilation required. After downloading all project files, simply double-click the `index.html` file in the root directory to launch the game directly in your default browser. All mainstream browsers are supported.
+
+You can also serve the project locally with Python. Run this from the project root:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-随后访问 `http://localhost:8000` 即可游玩，按 `Ctrl+C` 停止服务器。同一局域网内的其他设备可通过 `http://<本机IP>:8000` 访问。
+Then open `http://localhost:8000` to play, and press `Ctrl+C` to stop the server. Other devices on the same local network can access it via `http://<your-local-ip>:8000`.
 
-### GitHub Pages 部署
+### GitHub Pages Deployment
 
-本项目已通过 GitHub Pages 在线部署：**<https://drhycheung.github.io/SandSamsara/>**
+The project is deployed live via GitHub Pages: **<https://drhycheung.github.io/SandSamsara/>**
 
-如需自行部署一份：
+To deploy your own copy:
 
-1. 将本仓库 Fork 至你的 GitHub 账号，或推送你自己的副本
-2. 进入仓库页面，依次打开 **Settings → Pages**
-3. 在 **Build and deployment** 下，将 **Source** 设为 **Deploy from a branch**
-4. **Branch** 选择 `master`（或 `main`），目录选择 `/ (root)`，点击 **Save**
-5. 等待 1–2 分钟构建完成，即可通过 `https://<用户名>.github.io/<仓库名>/` 访问
+1. Fork this repository to your GitHub account, or push your own copy
+2. Open the repository page, then go to **Settings → Pages**
+3. Under **Build and deployment**, set **Source** to **Deploy from a branch**
+4. Select the `master` (or `main`) branch with the `/ (root)` directory, then click **Save**
+5. After 1–2 minutes of building, the site will be available at `https://<username>.github.io/<repository-name>/`
 
-### Vercel 部署
+### Vercel Deployment
 
-1. 登录 [Vercel](https://vercel.com)，点击 **Add New → Project**
-2. 导入本项目的 GitHub 仓库
-3. 保持默认配置（Framework Preset 选择 **Other**），直接点击 **Deploy**
-4. 部署完成后即可通过 Vercel 分配的域名访问，亦可按需绑定自定义域名
+1. Log in to [Vercel](https://vercel.com) and click **Add New → Project**
+2. Import this project's GitHub repository
+3. Keep the default settings (Framework Preset: **Other**) and click **Deploy**
+4. Once deployed, access it via the assigned Vercel domain, or bind a custom domain as needed
 
-### Nginx / Apache 部署
+### Nginx / Apache Deployment
 
-将项目全部文件上传至服务器站点根目录，无需任何额外配置：
+Upload all project files to your server's web root — no extra configuration required:
 
-- **Nginx**：放置于 `/usr/share/nginx/html/`（或你自行配置的 `root` 目录）
-- **Apache**：放置于 `/var/www/html/`
+- **Nginx**: place the files in `/usr/share/nginx/html/` (or your configured `root` directory)
+- **Apache**: place the files in `/var/www/html/`
